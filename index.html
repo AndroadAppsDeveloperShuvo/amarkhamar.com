@@ -10,7 +10,7 @@
     <link rel="apple-touch-icon" href="icon.png">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-title" content="আমার হিসাব">
+    <meta name="apple-mobile-web-app-title" content="আমার খামার">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="theme-color" content="#00796B">
 
@@ -74,7 +74,7 @@
         <div class="w-full max-sm bg-white dark:bg-gray-800 p-8 rounded-2xl shadow-xl border border-gray-100 dark:border-gray-700">
             <div class="text-center mb-6">
                 <div class="w-20 h-20 bg-teal-50 dark:bg-teal-900/30 rounded-full flex items-center justify-center mx-auto mb-4 text-4xl shadow-sm" style="width:80px;height:80px;line-height:80px;text-align:center;">🐔</div>
-                <h1 class="text-3xl font-bold text-teal-700 dark:text-teal-400">আমার হিসাব</h1>
+                <h1 class="text-3xl font-bold text-teal-700 dark:text-teal-400">আমার খামার</h1>
                 <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">স্মার্ট পোল্ট্রি খামার ম্যানেজমেন্ট</p>
             </div>
 
@@ -519,7 +519,7 @@
                 </div>
                 <div class="p-3 rounded-xl bg-gray-50 dark:bg-gray-700/50 flex items-start gap-2.5">
                     <span class="w-5 h-5 rounded-full bg-teal-700 text-white font-bold flex items-center justify-center flex-shrink-0 text-[11px]">৩</span>
-                    <span>এবার হোম স্ক্রিনের <b>আমার হিসাব</b> আইকন থেকে অ্যাপটি খুলে সেটিংস → <b>ফোন নোটিফিকেশন</b> চালু করুন।</span>
+                    <span>এবার হোম স্ক্রিনের <b>আমার খামার</b> আইকন থেকে অ্যাপটি খুলে সেটিংস → <b>ফোন নোটিফিকেশন</b> চালু করুন।</span>
                 </div>
             </div>
 
@@ -1314,17 +1314,17 @@
 
         navigateToTab('dashboard');
     </script>
-    <script src="notifications.js?v=39"></script>
+    <script src="notifications.js?v=41"></script>
     <script src="stock.js"></script>
     <script src="daily_report.js"></script>
-    <script src="medicine.js?v=39"></script>
-    <script src="pk_chatbot.js?v=39"></script>
-    <script src="push_notifications.js?v=39"></script>
+    <script src="medicine.js?v=41"></script>
+    <script src="pk_chatbot.js?v=41"></script>
+    <script src="push_notifications.js?v=41"></script>
     
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-                navigator.serviceWorker.register('sw.js?v=39').then(reg => {
+                navigator.serviceWorker.register('sw.js?v=41').then(reg => {
                     reg.update();
                 }).catch(e => console.warn('SW registration warning:', e));
             });
