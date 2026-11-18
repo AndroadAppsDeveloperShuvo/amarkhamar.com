@@ -171,9 +171,9 @@ function determineActiveSlots(dhaka) {
   const mins = dhaka.totalMinutes;
 
   // Medicine slots (Bangladesh time):
-  if (mins >= 6 * 60 && mins < 11 * 60 + 30) slots.push('med_morning');
-  if (mins >= 12 * 60 && mins < 15 * 60 + 30) slots.push('med_noon');
-  if (mins >= 16 * 60 && mins < 20 * 60 + 45) slots.push('med_night');
+  if (mins >= 5 * 60 + 55 && mins < 11 * 60 + 30) slots.push('med_morning');
+  if (mins >= 11 * 60 + 55 && mins < 15 * 60 + 30) slots.push('med_noon');
+  if (mins >= 15 * 60 + 55 && mins < 20 * 60 + 45) slots.push('med_night');
 
   // Requested Feed & Water check slots:
   // 1:00 PM (12:45 - 15:14 BDT)

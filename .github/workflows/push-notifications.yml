@@ -2,13 +2,19 @@ name: Scheduled Farm & Feed/Water Web Push Notifications
 
 on:
   schedule:
-    # Bangladesh Time (UTC+6):
-    - cron: '5 0 * * *'   # 06:05 AM BDT - Morning medicine reminder
-    - cron: '5 6 * * *'   # 12:05 PM BDT - Noon medicine reminder
-    - cron: '0 7 * * *'   # 01:00 PM BDT - 1:00 PM Feed & Water check
-    - cron: '30 9 * * *'  # 03:30 PM BDT - 3:30 PM Feed & Water check
-    - cron: '5 10 * * *'  # 04:05 PM BDT - Night medicine unlock reminder
-    - cron: '0 15 * * *'  # 09:00 PM BDT - 9:00 PM Feed & Water check
+    # Bangladesh Time (UTC+6) — off-peak minutes + backup retry so GitHub never drops a run:
+    - cron: '2 0 * * *'    # 06:02 AM BDT - Morning medicine
+    - cron: '22 0 * * *'   # 06:22 AM BDT - Morning medicine backup
+    - cron: '3 6 * * *'    # 12:03 PM BDT - Noon medicine
+    - cron: '23 6 * * *'   # 12:23 PM BDT - Noon medicine backup
+    - cron: '57 6 * * *'   # 12:57 PM BDT - 1:00 PM Feed & Water check
+    - cron: '17 7 * * *'   # 01:17 PM BDT - 1:00 PM Feed & Water backup
+    - cron: '27 9 * * *'   # 03:27 PM BDT - 3:30 PM Feed & Water check
+    - cron: '47 9 * * *'   # 03:47 PM BDT - 3:30 PM Feed & Water backup
+    - cron: '3 10 * * *'   # 04:03 PM BDT - Night medicine unlock
+    - cron: '23 10 * * *'  # 04:23 PM BDT - Night medicine unlock backup
+    - cron: '57 14 * * *'  # 08:57 PM BDT - 9:00 PM Feed & Water check
+    - cron: '17 15 * * *'  # 09:17 PM BDT - 9:00 PM Feed & Water backup
   workflow_dispatch:
     inputs:
       force_slot:
