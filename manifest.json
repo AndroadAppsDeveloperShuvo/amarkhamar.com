@@ -1,0 +1,26 @@
+{
+  "id": "./",
+  "name": "আমার হিসাব - স্মার্ট খামার",
+  "short_name": "আমার হিসাব",
+  "description": "স্মার্ট পোল্ট্রি খামার ম্যানেজমেন্ট, দৈনিক ঔষধ ও টিকা শিডিউল এবং হিসাব রক্ষণ অ্যাপ।",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#00796B",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "icon.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

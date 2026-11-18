@@ -1,0 +1,1334 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+    <title>আমার খামার - স্মার্ট ম্যানেজার</title>
+    
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" type="image/png" href="icon.png">
+    <link rel="apple-touch-icon" href="icon.png">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="আমার হিসাব">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#00796B">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Bengali:wght@400;500;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet" />
+
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+
+    <style>
+        :root { --color-primary: #00796B; }
+        body { font-family: 'Noto Sans Bengali', sans-serif; -webkit-font-smoothing: antialiased; }
+        body, .page, .bg-white, .bg-gray-50, .text-gray-900, .text-gray-500 { transition: background-color 0.3s, color 0.3s, border-color 0.3s; }
+        .page { position: absolute; top: 0; left: 0; width: 100%; height: 100%; overflow-y: auto; display: none; }
+        .page-visible { display: block; animation: fadeIn 0.3s ease-in-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .scrolling-text { overflow: hidden; white-space: nowrap; background: #E0F2F1; padding: 8px 12px; border-radius: 8px; margin-bottom: 16px; border-left: 4px solid var(--color-primary); }
+        .dark .scrolling-text { background: #004D40; border-left-color: #4DB6AC; color: #E0F2F1; }
+        .scrolling-text span { display: inline-block; padding-left: 100%; animation: scroll-left 15s linear infinite; color: var(--color-primary); font-weight: 600; }
+        .dark .scrolling-text span { color: #80CBC4; }
+        @keyframes scroll-left { 0% { transform: translateX(0%); } 100% { transform: translateX(-100%); } }
+        #pdf-overlay { display: none; }
+        .pdf-table th, .pdf-table td { border: 1px solid #ccc; padding: 8px; font-size: 13px; text-align: left; color: black; }
+        .pdf-table th { background-color: #eee; font-weight: bold; }
+        details > summary { list-style: none; cursor: pointer; transition: 0.2s; }
+        details > summary::-webkit-details-marker { display: none; }
+        details[open] > summary { background-color: #E0F2F1; color: #00796B; }
+        .dark details[open] > summary { background-color: #004D40; color: #80CBC4; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+        /* 🛡️ Critical Offline Anti-Breakage Fallback Rules */
+        .hidden { display: none !important; }
+        #auth-page { display: none; }
+        #auth-page.flex { display: flex; }
+        #auth-page:not(.hidden) { display: flex; }
+        #auth-page.hidden { display: none !important; }
+        #main-app.hidden { display: none !important; }
+        img { max-width: 100%; height: auto; }
+        .fixed { position: fixed; }
+        .inset-0 { top: 0; right: 0; bottom: 0; left: 0; }
+        .z-50 { z-index: 50; }
+    </style>
+    <script>
+        if (typeof tailwind !== 'undefined') {
+            tailwind.config = { darkMode: 'class', theme: { extend: { colors: { primary: '#00796B' } } } };
+        }
+        if (localStorage.getItem('theme') === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+            document.documentElement.classList.add('dark');
+        } else {
+            document.documentElement.classList.remove('dark');
+        }
+    </script>
+</head>
+<body class="bg-gray-50 text-gray-900 dark:bg-gray-900 dark:text-gray-100">
+
+    <div id="auth-page" class="hidden fixed inset-0 z-50 bg-gray-50 dark:bg-gray-900 flex flex-col justify-center items-center p-6">
+        <div class="w-full max-sm bg-white dark:bg-gray-800 p-8 rounded-2xl shadow-xl border border-gray-100 dark:border-gray-700">
+            <div class="text-center mb-6">
+                <div class="w-20 h-20 bg-teal-50 dark:bg-teal-900/30 rounded-full flex items-center justify-center mx-auto mb-4 text-4xl shadow-sm" style="width:80px;height:80px;line-height:80px;text-align:center;">🐔</div>
+                <h1 class="text-3xl font-bold text-teal-700 dark:text-teal-400">আমার হিসাব</h1>
+                <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">স্মার্ট পোল্ট্রি খামার ম্যানেজমেন্ট</p>
+            </div>
+
+            <button onclick="handleGoogleLogin()" class="w-full p-3 mb-6 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-xl flex items-center justify-center gap-3 hover:bg-gray-50 dark:hover:bg-gray-600 transition shadow-sm">
+                <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" width="20" height="20" class="w-5 h-5 flex-shrink-0" style="width:20px;height:20px;min-width:20px;min-height:20px;" alt="Google">
+                <span class="font-bold text-gray-700 dark:text-white">Google দিয়ে লগইন করুন</span>
+            </button>
+
+            <div class="flex items-center gap-2 mb-6">
+                <div class="h-[1px] bg-gray-200 dark:bg-gray-600 flex-grow"></div>
+                <span class="text-xs text-gray-400 font-medium">অথবা ইমেইল দিয়ে</span>
+                <div class="h-[1px] bg-gray-200 dark:bg-gray-600 flex-grow"></div>
+            </div>
+
+            <div id="login-form-container">
+                <input type="email" id="login-email" placeholder="ইমেইল" class="w-full p-4 mb-4 rounded-xl border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-teal-500 dark:text-white">
+                <input type="password" id="login-pass" placeholder="পাসওয়ার্ড" class="w-full p-4 mb-2 rounded-xl border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-teal-500 dark:text-white">
+                
+                <div class="text-right mb-6">
+                    <button onclick="handleForgotPassword()" class="text-xs text-teal-600 dark:text-teal-400 font-bold hover:underline">পাসওয়ার্ড ভুলে গেছেন?</button>
+                </div>
+
+                <button onclick="handleLogin()" class="w-full p-4 bg-teal-700 hover:bg-teal-800 text-white font-bold rounded-xl shadow-lg transition transform active:scale-95">লগইন করুন</button>
+                <p class="mt-6 text-center text-sm text-gray-500 dark:text-gray-400">একাউন্ট নেই? <button onclick="toggleAuthMode()" class="text-teal-700 dark:text-teal-400 font-bold hover:underline">রেজিস্ট্রেশন</button></p>
+            </div>
+
+            <div id="register-form-container" class="hidden">
+                <input type="email" id="reg-email" placeholder="ইমেইল" class="w-full p-4 mb-4 rounded-xl border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 dark:text-white">
+                <input type="password" id="reg-pass" placeholder="পাসওয়ার্ড" class="w-full p-4 mb-6 rounded-xl border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 dark:text-white">
+                <button onclick="handleRegister()" class="w-full p-4 bg-green-600 hover:bg-green-700 text-white font-bold rounded-xl shadow-lg transition transform active:scale-95">রেজিস্ট্রেশন করুন</button>
+                <p class="mt-6 text-center text-sm text-gray-500 dark:text-gray-400">একাউন্ট আছে? <button onclick="toggleAuthMode()" class="text-teal-700 dark:text-teal-400 font-bold hover:underline">লগইন</button></p>
+            </div>
+            <p id="auth-error" class="text-red-500 text-sm text-center mt-4 font-medium"></p>
+        </div>
+    </div>
+
+    <main id="main-app" class="relative max-w-md mx-auto h-screen overflow-hidden hidden shadow-2xl bg-gray-50 dark:bg-gray-900">
+        
+        <div id="dashboard" class="page tab-page page-visible bg-gray-50 dark:bg-gray-900">
+            <header class="sticky top-0 z-30 p-5 bg-white/90 dark:bg-gray-800/90 backdrop-blur-md border-b border-gray-100 dark:border-gray-700 flex justify-between items-center">
+                <div>
+                    <h1 class="text-2xl font-bold text-teal-700 dark:text-teal-400">ড্যাশবোর্ড</h1>
+                    <p class="text-xs text-gray-500 dark:text-gray-400" id="current-date">আজকের তারিখ</p>
+                </div>
+                
+                <div class="relative flex items-center gap-2">
+                    <a href="https://24-7-live-weather.vercel.app/" target="_blank" rel="noopener noreferrer" class="w-10 h-10 rounded-full bg-teal-50 dark:bg-teal-900/30 flex items-center justify-center text-xl hover:bg-teal-100 shadow-sm border border-teal-100 dark:border-teal-800 transition focus:outline-none" title="আবহাওয়া দেখুন">
+                        🌤️
+                    </a>
+
+                    <button onclick="toggleNotifications()" class="relative w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center text-teal-700 dark:text-teal-400 hover:bg-teal-50 dark:hover:bg-gray-600 transition focus:outline-none">
+                        <span class="text-xl">🔔</span>
+                        <span id="notif-badge" class="hidden absolute top-2 right-2 w-2.5 h-2.5 bg-red-500 border-2 border-white dark:border-gray-700 rounded-full animate-pulse"></span>
+                    </button>
+
+                    <div id="notif-dropdown" class="hidden absolute right-0 top-12 w-72 bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-100 dark:border-gray-700 z-50 overflow-hidden origin-top-right transform transition-all">
+                        <div class="p-4 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-gray-700/50">
+                            <h3 class="font-bold text-gray-700 dark:text-gray-200 text-sm">নোটিফিকেশন</h3>
+                            <button onclick="clearNotifications()" class="text-xs text-teal-600 dark:text-teal-400 font-bold hover:underline">মুছে ফেলুন</button>
+                        </div>
+                        <div id="notif-list" class="max-h-60 overflow-y-auto divide-y divide-gray-50 dark:divide-gray-700">
+                        </div>
+                    </div>
+                </div>
+            </header>
+
+            <div class="p-5 space-y-6 pb-28">
+
+                <div id="dashboard-summary" class="transform transition hover:scale-[1.02]"></div>
+                <div>
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-lg font-bold text-gray-800 dark:text-gray-200">সাম্প্রতিক চালান</h2>
+                        <button onclick="navigateToTab('shipments-page')" class="text-xs text-teal-600 dark:text-teal-400 font-bold">সব দেখুন</button>
+                    </div>
+                    <div id="ongoing-shipments-list" class="space-y-3"></div>
+                </div>
+            </div>
+        </div>
+        
+        <div id="shipments-page" class="page tab-page bg-gray-50 dark:bg-gray-900">
+            <header class="sticky top-0 z-10 p-5 bg-white/90 dark:bg-gray-800/90 backdrop-blur-md border-b border-gray-100 dark:border-gray-700"><h1 class="text-xl font-bold text-center dark:text-white">সকল চালান</h1></header>
+            <div class="p-5 space-y-3 pb-28" id="all-shipments-list"></div>
+        </div>
+        
+
+
+        <div id="settings-page" class="page tab-page bg-gray-50 dark:bg-gray-900">
+            <header class="sticky top-0 z-10 p-5 bg-white/90 dark:bg-gray-800/90 backdrop-blur-md border-b border-gray-100 dark:border-gray-700"><h1 class="text-xl font-bold text-center dark:text-white">সেটিংস</h1></header>
+            <div class="p-5 space-y-6 pb-28">
+                
+                <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
+                    <h2 class="px-5 py-3 text-xs font-bold text-gray-400 uppercase tracking-wider bg-gray-50 dark:bg-gray-700/50">সাধারণ</h2>
+                    <div class="flex justify-between items-center p-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition">
+                        <span class="flex items-center gap-3 font-medium dark:text-gray-200"><span class="material-symbols-outlined text-gray-500">dark_mode</span> ডার্ক মোড</span>
+                        <button onclick="toggleTheme()" class="w-12 h-6 rounded-full bg-gray-300 dark:bg-teal-600 relative transition-colors focus:outline-none">
+                            <div id="theme-knob" class="w-4 h-4 bg-white rounded-full absolute top-1 left-1 transition-all dark:left-7 shadow-sm"></div>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 🔔 ফোন নোটিফিকেশন ও অ্যাপ ইন্সটল (Android + iPhone Home Screen) -->
+                <div id="pwa-push-settings-card" class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
+                    <h2 class="px-5 py-3 text-xs font-bold text-gray-400 uppercase tracking-wider bg-gray-50 dark:bg-gray-700/50">ফোন নোটিফিকেশন ও অ্যাপ ইন্সটল</h2>
+
+                    <div id="pwa-install-row" class="flex items-center justify-between gap-3 p-4 border-b border-gray-100 dark:border-gray-700">
+                        <div class="flex items-center gap-3 min-w-0">
+                            <div class="w-10 h-10 rounded-xl bg-teal-50 dark:bg-teal-900/30 text-teal-700 dark:text-teal-400 flex items-center justify-center flex-shrink-0">
+                                <span class="material-symbols-outlined">install_mobile</span>
+                            </div>
+                            <div class="min-w-0">
+                                <h3 class="font-bold text-sm text-gray-900 dark:text-white">হোম স্ক্রিনে যোগ করুন</h3>
+                                <p id="pwa-install-desc" class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Add to Home Screen দিয়ে অ্যাপ হিসেবে ফোনে যুক্ত করুন</p>
+                            </div>
+                        </div>
+                        <button id="pwa-install-btn" type="button" onclick="triggerPwaInstall()" class="min-h-[40px] px-3.5 py-2 rounded-xl bg-teal-700 hover:bg-teal-800 text-white text-xs font-bold flex-shrink-0 active:scale-95 transition">
+                            যোগ করুন
+                        </button>
+                    </div>
+
+                    <div id="pwa-push-row" class="p-4 space-y-3">
+                        <div class="flex items-center justify-between gap-3">
+                            <div class="flex items-center gap-3 min-w-0">
+                                <div class="w-10 h-10 rounded-xl bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 flex items-center justify-center flex-shrink-0">
+                                    <span class="material-symbols-outlined">notifications_active</span>
+                                </div>
+                                <div class="min-w-0">
+                                    <h3 class="font-bold text-sm text-gray-900 dark:text-white">ফোন নোটিফিকেশন (অ্যাপ বন্ধ থাকলেও)</h3>
+                                    <p id="pwa-push-status" class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">অ্যাপ বন্ধ থাকলেও ফোনে ঔষধ, খাবার ও পানির রিমাইন্ডার পান</p>
+                                </div>
+                            </div>
+                            <button id="pwa-push-btn" type="button" onclick="enablePkPhonePush()" class="min-h-[40px] px-3.5 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold flex-shrink-0 active:scale-95 transition">
+                                <span id="pwa-push-btn-text">চালু করুন</span>
+                            </button>
+                        </div>
+
+                        <div id="pwa-ios-hint" class="hidden p-3 rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800/40 text-xs text-blue-800 dark:text-blue-200 leading-relaxed">
+                            📱 <b>iPhone নির্দেশনা:</b> Safari দিয়ে <b>Share</b> বাটনে ট্যাপ করে <b>"Add to Home Screen"</b> করুন এবং হোম স্ক্রিনের অ্যাপ আইকন থেকে খুলে নোটিফিকেশন চালু করুন।
+                        </div>
+
+                        <div class="flex items-center justify-between gap-2 pt-1">
+                            <span class="text-[11px] text-gray-400 dark:text-gray-500">খাবার ও পানি: দুপুর ১:০০, বিকাল ৩:৩০, রাত ৯:০০</span>
+                            <button id="pwa-push-test-btn" type="button" onclick="sendTestPhoneNotification()" class="hidden px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 text-xs font-bold hover:bg-gray-200 dark:hover:bg-gray-600 transition">
+                                টেস্ট পাঠান
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 🤖 PK Chat Bot: Personal Assistant & Daily Medicine Monitor -->
+                <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
+                    <h2 class="px-5 py-3 text-xs font-bold text-gray-400 uppercase tracking-wider bg-gray-50 dark:bg-gray-700/50">পার্সোনাল অ্যাসিস্ট্যান্ট</h2>
+                    <button onclick="openPkChatBot()" class="w-full min-h-[68px] flex items-center justify-between p-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition text-left group">
+                        <div class="flex items-center gap-3 min-w-0 pr-2">
+                            <div class="w-11 h-11 rounded-2xl bg-teal-700 text-white flex items-center justify-center flex-shrink-0 shadow-sm group-hover:scale-105 transition-transform">
+                                <span class="material-symbols-outlined">smart_toy</span>
+                            </div>
+                            <div class="min-w-0">
+                                <h3 class="font-bold text-sm text-gray-900 dark:text-white">PK Chat Bot</h3>
+                                <p id="pk-bot-settings-status" class="text-xs text-gray-500 dark:text-gray-400 mt-0.5 truncate">প্রতিদিনের ঔষধ চেক-ইন ও খামারের ব্যক্তিগত সহকারী</p>
+                            </div>
+                        </div>
+                        <span class="material-symbols-outlined text-gray-400 group-hover:text-teal-700 dark:group-hover:text-teal-400 flex-shrink-0 transition-colors">chevron_right</span>
+                    </button>
+                </div>
+
+                <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
+                    <h2 class="px-5 py-3 text-xs font-bold text-gray-400 uppercase tracking-wider bg-gray-50 dark:bg-gray-700/50">টুলস</h2>
+                    <button onclick="navigate('due-list-page')" class="w-full flex items-center justify-between p-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition border-b border-gray-100 dark:border-gray-700"><span class="flex items-center gap-3 font-medium dark:text-gray-200"><span class="material-symbols-outlined text-orange-500">account_balance_wallet</span> বাকির খাতা</span> <span class="material-symbols-outlined text-gray-400">chevron_right</span></button>
+                    <button onclick="navigate('fcr-calculator-page')" class="w-full flex items-center justify-between p-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition border-b border-gray-100 dark:border-gray-700"><span class="flex items-center gap-3 font-medium dark:text-gray-200"><span class="material-symbols-outlined text-purple-500">calculate</span> FCR ক্যালকুলেটর</span> <span class="material-symbols-outlined text-gray-400">chevron_right</span></button>
+                    <button onclick="openStockPage()" class="w-full flex items-center justify-between p-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition border-b border-gray-100 dark:border-gray-700">
+                        <span class="flex items-center gap-3 font-medium dark:text-gray-200">
+                            <span class="material-symbols-outlined text-green-600">inventory</span> 
+                            আমার স্টক
+                        </span> 
+                        <span class="material-symbols-outlined text-gray-400">chevron_right</span>
+                    </button>
+                    <button onclick="openMedicinePage()" class="w-full flex items-center justify-between p-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition border-b border-gray-100 dark:border-gray-700">
+                        <span class="flex items-center gap-3 font-medium dark:text-gray-200">
+                            <span class="material-symbols-outlined text-blue-500">vaccines</span> 
+                            ঔষধ ও ভ্যাকসিনের খাতা
+                        </span> 
+                        <span class="material-symbols-outlined text-gray-400">chevron_right</span>
+                    </button>
+                    <button onclick="openDailyReportPage()" class="w-full flex items-center justify-between p-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition">
+                        <span class="flex items-center gap-3 font-medium dark:text-gray-200">
+                            <span class="material-symbols-outlined text-red-500">monitoring</span> 
+                            দৈনিক রিপোর্ট (মৃত্যু ও গ্রোথ)
+                        </span> 
+                        <span class="material-symbols-outlined text-gray-400">chevron_right</span>
+                    </button>
+                </div>
+                <!-- 💾 Data Backup & Restore -->
+                <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
+                    <h2 class="px-5 py-3 text-xs font-bold text-gray-400 uppercase tracking-wider bg-gray-50 dark:bg-gray-700/50">ডাটা ব্যাকআপ ও রিস্টোর</h2>
+                    
+                    <!-- Download Backup Button -->
+                    <button onclick="exportFarmDataBackup()" class="w-full flex items-center justify-between p-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition border-b border-gray-100 dark:border-gray-700 text-left group">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-lg bg-teal-50 dark:bg-teal-900/30 text-teal-700 dark:text-teal-400 flex items-center justify-center flex-shrink-0 group-hover:scale-105 transition-transform">
+                                <span class="material-symbols-outlined">download</span>
+                            </div>
+                            <div>
+                                <h3 class="font-bold text-sm text-gray-800 dark:text-gray-200">ব্যাকআপ ডাউনলোড (JSON)</h3>
+                                <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">সকল চালান, খরচ, আয়, স্টক ও বাকির ডেটা সেভ রাখুন</p>
+                            </div>
+                        </div>
+                        <span class="material-symbols-outlined text-gray-400 group-hover:text-teal-600 dark:group-hover:text-teal-400 transition-colors">chevron_right</span>
+                    </button>
+
+                    <!-- Restore Backup Button -->
+                    <button onclick="triggerRestoreFileInput()" class="w-full flex items-center justify-between p-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition text-left group">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-lg bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 flex items-center justify-center flex-shrink-0 group-hover:scale-105 transition-transform">
+                                <span class="material-symbols-outlined">upload_file</span>
+                            </div>
+                            <div>
+                                <h3 class="font-bold text-sm text-gray-800 dark:text-gray-200">ব্যাকআপ রিস্টোর করুন</h3>
+                                <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">JSON ফাইল আপলোড করে পূর্বের ডেটা ফিরিয়ে আনুন</p>
+                            </div>
+                        </div>
+                        <span class="material-symbols-outlined text-gray-400 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">chevron_right</span>
+                    </button>
+                    <!-- Hidden File Input for JSON restore -->
+                    <input type="file" id="backup-file-input" accept=".json,application/json" class="hidden" onchange="handleBackupFileSelect(event)">
+                </div>
+
+                <!-- 👨‍💻 ডেভেলপার / এডমিনের সাথে যোগাযোগ -->
+                <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
+                    <h2 class="px-5 py-3 text-xs font-bold text-gray-400 uppercase tracking-wider bg-gray-50 dark:bg-gray-700/50">যোগাযোগ ও সাপোর্ট</h2>
+                    <button onclick="openPkDevContactModal()" class="w-full min-h-[60px] flex items-center justify-between p-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition text-left">
+                        <div class="flex items-center gap-3 min-w-0 pr-2">
+                            <div class="w-10 h-10 rounded-xl bg-teal-50 dark:bg-teal-900/30 text-teal-700 dark:text-teal-400 flex items-center justify-center flex-shrink-0">
+                                <span class="material-symbols-outlined">support_agent</span>
+                            </div>
+                            <div class="min-w-0">
+                                <h3 class="font-bold text-sm text-gray-900 dark:text-white">ডেভেলপার / এডমিনের সাথে যোগাযোগ</h3>
+                                <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">সাপোর্ট ও তথ্য পোর্টাল</p>
+                            </div>
+                        </div>
+                        <span class="material-symbols-outlined text-gray-400 flex-shrink-0">chevron_right</span>
+                    </button>
+                </div>
+
+                <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
+                    <h2 class="px-5 py-3 text-xs font-bold text-gray-400 uppercase tracking-wider bg-gray-50 dark:bg-gray-700/50">একাউন্ট</h2>
+                    <button onclick="logoutUser()" class="w-full flex items-center justify-center gap-2 p-4 text-red-500 font-bold hover:bg-red-50 dark:hover:bg-red-900/20 transition"><span class="material-symbols-outlined">logout</span> লগআউট করুন</button>
+                </div>
+                <div class="text-center"><p class="text-xs text-gray-300 mt-1 font-mono">Dev SHUVO</p></div>
+            </div>
+        </div>
+
+        <div id="shipment-details-page" class="page bg-gray-50 dark:bg-gray-900">
+            <header class="sticky top-0 z-10 p-4 bg-white/90 dark:bg-gray-800/90 backdrop-blur-md border-b border-gray-100 dark:border-gray-700 flex justify-between items-center shadow-sm">
+                <div class="flex items-center"><button onclick="goBack()" class="mr-2 p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700"><span class="material-symbols-outlined dark:text-white">arrow_back</span></button><h1 id="details-shipment-name" class="text-lg font-bold truncate w-24 dark:text-white"></h1></div>
+                <div class="flex gap-1">
+                    <button onclick="openCategoryReport()" class="p-2 rounded-full text-purple-600 bg-purple-50 hover:bg-purple-100 dark:bg-purple-900/30 dark:text-purple-300"><span class="material-symbols-outlined">pie_chart</span></button>
+                    <button onclick="sharePDF()" class="p-2 rounded-full text-teal-700 bg-teal-50 hover:bg-teal-100 dark:bg-teal-900/30 dark:text-teal-300"><span class="material-symbols-outlined">share</span></button>
+                    <button onclick="deleteCurrentShipment()" class="p-2 rounded-full text-red-500 bg-red-50 hover:bg-red-100 dark:bg-red-900/30 dark:text-red-300"><span class="material-symbols-outlined">delete</span></button>
+                </div>
+            </header>
+            <div class="p-5 space-y-5 pb-28">
+                <div id="details-timer-status-card" class="hidden"></div>
+                <div id="details-summary-cards" class="grid grid-cols-2 gap-4"></div>
+                <div class="bg-gray-200 dark:bg-gray-700 p-1 rounded-xl flex shadow-inner"><button id="expense-tab-button" onclick="switchTab('expense')" class="flex-1 py-2 rounded-lg text-sm font-bold transition-all shadow-sm bg-white dark:bg-gray-600 text-gray-800 dark:text-white">ব্যয়</button><button id="income-tab-button" onclick="switchTab('income')" class="flex-1 py-2 rounded-lg text-sm font-bold transition-all text-gray-500 dark:text-gray-400">আয়</button></div>
+                <div id="expense-list-container" class="space-y-3"></div><div id="income-list-container" class="hidden space-y-3"></div>
+            </div>
+            <div class="fixed bottom-24 right-6 z-20"><button onclick="prepareEntryForm()" class="w-14 h-14 rounded-full bg-teal-700 text-white shadow-xl flex items-center justify-center transform transition hover:scale-110 active:scale-95"><span class="material-symbols-outlined text-3xl">add</span></button></div>
+        </div>
+
+        <div id="category-modal" class="hidden fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm">
+            <div class="bg-white dark:bg-gray-800 w-full sm:w-96 rounded-t-3xl sm:rounded-3xl p-6 relative animate-[slideUp_0.3s_ease-out]">
+                <button onclick="document.getElementById('category-modal').classList.add('hidden')" class="absolute top-4 right-4 p-2 bg-gray-100 dark:bg-gray-700 rounded-full hover:bg-red-100 hover:text-red-500 transition"><span class="material-symbols-outlined dark:text-gray-300">close</span></button>
+                <h2 class="text-xl font-bold text-gray-800 dark:text-white mb-1">খরচের খাতসমূহ</h2>
+                <p class="text-xs text-gray-500 dark:text-gray-400 mb-4">কোন খাতে কত খরচ হয়েছে</p>
+                <div id="category-report-content" class="space-y-3 max-h-[60vh] overflow-y-auto"></div>
+            </div>
+        </div>
+
+        <div id="add-shipment-page" class="page bg-white dark:bg-gray-900"><header class="p-4 border-b dark:border-gray-800 flex items-center"><button onclick="goBack()" class="mr-4"><span class="material-symbols-outlined dark:text-white">arrow_back</span></button><h1 class="text-xl font-bold dark:text-white">নতুন চালান</h1></header><div class="p-6"><form onsubmit="saveShipment(event)" class="space-y-5"><input id="shipment-name" required placeholder="চালানের নাম" class="w-full p-4 rounded-xl border bg-gray-50 dark:bg-gray-800 dark:border-gray-700 dark:text-white"><input id="shipment-chicken-count" type="number" required placeholder="মুরগির সংখ্যা" class="w-full p-4 rounded-xl border bg-gray-50 dark:bg-gray-800 dark:border-gray-700 dark:text-white"><input id="shipment-start-date" type="date" required class="w-full p-4 rounded-xl border bg-gray-50 dark:bg-gray-800 dark:border-gray-700 dark:text-white"><button type="submit" class="w-full p-4 bg-teal-700 text-white font-bold rounded-xl shadow-lg">সেভ করুন</button></form></div></div>
+        <div id="add-entry-page" class="page bg-white dark:bg-gray-900"><header class="p-4 border-b dark:border-gray-800 flex items-center"><button onclick="goBack()" class="mr-4"><span class="material-symbols-outlined dark:text-white">arrow_back</span></button><h1 id="entry-form-title" class="text-xl font-bold dark:text-white"></h1></header><div class="p-6"><form onsubmit="saveEntry(event)" class="space-y-5"><div id="expense-fields"><select id="expense-type" class="w-full p-4 rounded-xl border bg-gray-50 dark:bg-gray-800 dark:border-gray-700 dark:text-white"><option>মুরগির বাচ্চা কেনা</option><option>খাবার খরচ</option><option>ঔষধ ও ভিটামিন</option><option>ইলেকট্রিক</option><option>गुড়া</option><option>অন্যান্য</option></select></div><div id="income-fields" class="hidden"><input id="income-description" placeholder="বিবরণ" class="w-full p-4 rounded-xl border bg-gray-50 dark:bg-gray-800 dark:border-gray-700 dark:text-white"></div><input id="entry-amount" type="number" required placeholder="টাকা" class="w-full p-4 rounded-xl border bg-gray-50 dark:bg-gray-800 dark:border-gray-700 dark:text-white"><input id="entry-date" type="date" required class="w-full p-4 rounded-xl border bg-gray-50 dark:bg-gray-800 dark:border-gray-700 dark:text-white"><textarea id="entry-note" placeholder="নোট (অপশনাল)" class="w-full p-4 rounded-xl border bg-gray-50 dark:bg-gray-800 dark:border-gray-700 dark:text-white"></textarea><button type="submit" class="w-full p-4 bg-teal-700 text-white font-bold rounded-xl shadow-lg">সেভ করুন</button></form></div></div>
+        <div id="fcr-calculator-page" class="page bg-white dark:bg-gray-900"><header class="p-4 border-b dark:border-gray-800 flex items-center"><button onclick="goBack()" class="mr-4"><span class="material-symbols-outlined dark:text-white">arrow_back</span></button><h1 class="text-xl font-bold dark:text-white">FCR ক্যালকুলেটর</h1></header><div class="p-6 space-y-5"><input id="fcr-bags" type="text" inputmode="numeric" placeholder="খাবারের বস্তা (৫০ কেজি)" class="w-full p-4 rounded-xl border bg-gray-50 dark:bg-gray-800 dark:border-gray-700 dark:text-white"><input id="fcr-extra-feed" type="text" inputmode="numeric" placeholder="অতিরিক্ত খাবার (কেজি)" class="w-full p-4 rounded-xl border bg-gray-50 dark:bg-gray-800 dark:border-gray-700 dark:text-white"><input id="fcr-total-weight" type="text" inputmode="numeric" placeholder="মোট মাংসের ওজন (কেজি)" class="w-full p-4 rounded-xl border bg-gray-50 dark:bg-gray-800 dark:border-gray-700 dark:text-white"><button onclick="calculateFCR()" class="w-full p-4 bg-purple-600 text-white font-bold rounded-xl shadow-lg">হিসাব করুন</button><div id="fcr-result" class="hidden text-center pt-4 bg-gray-50 dark:bg-gray-800 rounded-xl p-4"><div class="text-4xl font-bold text-purple-600 dark:text-purple-400" id="fcr-value">0.0</div><p id="fcr-status-title" class="font-bold mt-2 dark:text-gray-300"></p><p id="fcr-total-feed-display" class="text-xs text-gray-400 mt-1"></p></div></div></div>
+        <div id="due-list-page" class="page bg-gray-50 dark:bg-gray-900"><header class="p-4 bg-white dark:bg-gray-800 border-b dark:border-gray-700 flex justify-between items-center"><div class="flex items-center"><button onclick="goBack()" class="mr-4"><span class="material-symbols-outlined dark:text-white">arrow_back</span></button><h1 class="text-xl font-bold dark:text-white">বাকির খাতা</h1></div><span id="total-due-amount" class="font-bold text-teal-700 dark:text-teal-400 px-3 py-1 bg-teal-50 dark:bg-teal-900/30 rounded-full text-sm">৳0</span></header><div class="p-5 pb-28 space-y-3" id="due-list-container"></div><div class="fixed bottom-10 right-6 z-20"><button onclick="prepareDueForm()" class="w-14 h-14 rounded-full bg-teal-700 text-white shadow-xl flex items-center justify-center transform transition hover:scale-110"><span class="material-symbols-outlined text-3xl">add</span></button></div></div>
+        <div id="add-due-page" class="page bg-white dark:bg-gray-900"><header class="p-4 border-b dark:border-gray-800 flex items-center"><button onclick="goBack()" class="mr-4"><span class="material-symbols-outlined dark:text-white">arrow_back</span></button><h1 id="due-form-title" class="text-xl font-bold dark:text-white">নতুন বাকি</h1></header><div class="p-6"><form onsubmit="saveDue(event)" class="space-y-5"><input type="hidden" id="due-id"><input id="due-name" required placeholder="নাম" class="w-full p-4 rounded-xl border bg-gray-50 dark:bg-gray-800 dark:border-gray-700 dark:text-white"><input id="due-mobile" placeholder="মোবাইল" class="w-full p-4 rounded-xl border bg-gray-50 dark:bg-gray-800 dark:border-gray-700 dark:text-white"><input id="due-amount" type="number" required placeholder="টাকা" class="w-full p-4 rounded-xl border bg-gray-50 dark:bg-gray-800 dark:border-gray-700 dark:text-white"><input id="due-date" type="date" required class="w-full p-4 rounded-xl border bg-gray-50 dark:bg-gray-800 dark:border-gray-700 dark:text-white"><textarea id="due-note" placeholder="নোট" class="w-full p-4 rounded-xl border bg-gray-50 dark:bg-gray-800 dark:border-gray-700 dark:text-white"></textarea><button type="submit" class="w-full p-4 bg-teal-700 text-white font-bold rounded-xl shadow-lg">সেভ করুন</button></form></div></div>
+
+        <div id="add-shipment-button-container" class="fixed bottom-24 right-6 z-20"><button onclick="navigate('add-shipment-page')" class="w-14 h-14 rounded-full bg-teal-700 text-white shadow-xl flex items-center justify-center transform transition hover:scale-110 active:scale-95"><span class="material-symbols-outlined text-3xl">add</span></button></div>
+
+        <nav id="main-bottom-nav" class="absolute bottom-0 left-0 right-0 z-10 bg-white/95 dark:bg-gray-900/95 backdrop-blur-lg border-t border-gray-200 dark:border-gray-700"><div class="flex h-16 items-center justify-around"><a href="javascript:void(0)" onclick="navigateToTab('dashboard', event)" class="flex flex-col items-center gap-1 text-teal-700 dark:text-teal-400 nav-item" id="nav-dashboard"><span class="material-symbols-outlined">dashboard</span><span class="text-[10px] font-bold">ড্যাশবোর্ড</span></a><a href="javascript:void(0)" onclick="navigateToTab('shipments-page', event)" class="flex flex-col items-center gap-1 text-gray-400 nav-item" id="nav-shipments-page"><span class="material-symbols-outlined">list_alt</span><span class="text-[10px] font-bold">চালান</span></a><a href="javascript:void(0)" onclick="navigateToTab('medicine-page', event)" class="flex flex-col items-center gap-1 text-gray-400 nav-item" id="nav-medicine-page"><span class="material-symbols-outlined">vaccines</span><span class="text-[10px] font-bold">ঔষধ</span></a><a href="javascript:void(0)" onclick="navigateToTab('settings-page', event)" class="flex flex-col items-center gap-1 text-gray-400 nav-item" id="nav-settings-page"><span class="material-symbols-outlined">settings</span><span class="text-[10px] font-bold">সেটিংস</span></a></div></nav>
+    </main>
+    
+    <!-- 🎥 Video Modal Player -->
+    <div id="video-modal" class="hidden fixed inset-0 bg-black/90 z-[70] flex items-center justify-center p-4 backdrop-blur-md animate-[fadeIn_0.2s_ease-out]">
+        <div class="bg-gray-900 w-full max-w-lg rounded-3xl overflow-hidden relative shadow-2xl border border-gray-700">
+            <div class="p-4 bg-gradient-to-r from-teal-900/80 to-gray-900 text-white flex items-center justify-between border-b border-gray-800">
+                <div class="flex items-center gap-3">
+                    <div class="w-9 h-9 rounded-xl bg-red-600/20 border border-red-500/30 text-red-500 flex items-center justify-center text-xl flex-shrink-0">
+                        <span class="material-symbols-outlined">play_circle</span>
+                    </div>
+                    <div>
+                        <h3 id="video-modal-title" class="text-sm font-bold text-white">ভিডিও গাইড</h3>
+                        <p id="video-modal-subtitle" class="text-[11px] text-teal-200">মুরগির পরিচর্যা ও ওষুধ প্রয়োগ নির্দেশিকা</p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2">
+                    <a id="video-external-link" href="#" target="_blank" rel="noopener noreferrer" class="p-2 text-gray-300 hover:text-white bg-white/10 hover:bg-white/20 rounded-xl transition" title="গুগল ড্রাইভ বা নতুন ট্যাবে খুলুন">
+                        <span class="material-symbols-outlined text-lg">open_in_new</span>
+                    </a>
+                    <button onclick="closeVideoModal()" class="p-2 text-gray-300 hover:text-red-400 bg-white/10 hover:bg-white/20 rounded-xl transition" title="বন্ধ করুন">
+                        <span class="material-symbols-outlined text-lg">close</span>
+                    </button>
+                </div>
+            </div>
+            <div class="relative pb-[56.25%] h-0 bg-black">
+                <iframe id="youtube-frame" class="absolute top-0 left-0 w-full h-full" src="" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>
+            </div>
+            <div class="p-3 bg-gray-950/80 text-center flex items-center justify-between text-[11px] text-gray-400 border-t border-gray-800/60 px-4">
+                <span class="flex items-center gap-1"><span class="material-symbols-outlined text-sm text-teal-400">info</span> সরাসরি ড্রাইভ ভিডিও প্লেয়ার</span>
+                <span id="video-breed-tag" class="bg-teal-900/50 text-teal-300 border border-teal-700/50 px-2 py-0.5 rounded-md font-bold text-[10px]">ব্রয়লার</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- 📥 Restore Confirmation Modal -->
+    <div id="restore-confirm-modal" class="hidden fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-[fadeIn_0.2s_ease-out]">
+        <div class="bg-white dark:bg-gray-800 w-full max-w-md rounded-2xl p-6 shadow-2xl border border-gray-100 dark:border-gray-700 relative">
+            <div class="flex items-center justify-between pb-3 border-b border-gray-100 dark:border-gray-700 mb-4">
+                <div class="flex items-center gap-2.5">
+                    <div class="w-9 h-9 rounded-xl bg-teal-50 dark:bg-teal-900/30 text-teal-700 dark:text-teal-400 flex items-center justify-center">
+                        <span class="material-symbols-outlined text-xl">restore</span>
+                    </div>
+                    <div>
+                        <h3 class="text-base font-bold text-gray-800 dark:text-white">ব্যাকআপ রিস্টোর নিশ্চিতকরণ</h3>
+                        <p class="text-xs text-gray-500 dark:text-gray-400">ফাইলের বিস্তারিত তথ্য যাচাই করুন</p>
+                    </div>
+                </div>
+                <button onclick="closeRestoreModal()" class="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 rounded-full transition">
+                    <span class="material-symbols-outlined text-xl">close</span>
+                </button>
+            </div>
+
+            <!-- File info banner -->
+            <div class="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-xl mb-4 border border-gray-100 dark:border-gray-600">
+                <div class="flex items-center gap-2 mb-1">
+                    <span class="material-symbols-outlined text-sm text-teal-600 dark:text-teal-400">description</span>
+                    <span id="restore-modal-filename" class="text-xs font-mono font-bold text-gray-700 dark:text-gray-200 truncate">backup.json</span>
+                </div>
+                <div id="restore-modal-date" class="text-[11px] text-gray-500 dark:text-gray-400 pl-6">তারিখ: জানা নেই</div>
+            </div>
+
+            <!-- Statistics Grid -->
+            <div class="grid grid-cols-2 gap-2.5 mb-4">
+                <div class="p-3 bg-teal-50/50 dark:bg-teal-900/20 rounded-xl border border-teal-100 dark:border-teal-800/40">
+                    <span class="text-[11px] text-teal-800 dark:text-teal-300 font-medium flex items-center gap-1">
+                        <span class="material-symbols-outlined text-xs">receipt_long</span> চালান
+                    </span>
+                    <div id="restore-stat-shipments" class="text-base font-bold text-teal-900 dark:text-teal-200 mt-0.5">০ টি</div>
+                </div>
+                <div class="p-3 bg-orange-50/50 dark:bg-orange-900/20 rounded-xl border border-orange-100 dark:border-orange-800/40">
+                    <span class="text-[11px] text-orange-800 dark:text-orange-300 font-medium flex items-center gap-1">
+                        <span class="material-symbols-outlined text-xs">account_balance_wallet</span> বাকির খাতা
+                    </span>
+                    <div id="restore-stat-dues" class="text-base font-bold text-orange-900 dark:text-orange-200 mt-0.5">০ টি</div>
+                </div>
+                <div class="p-3 bg-green-50/50 dark:bg-green-900/20 rounded-xl border border-green-100 dark:border-green-800/40">
+                    <span class="text-[11px] text-green-800 dark:text-green-300 font-medium flex items-center gap-1">
+                        <span class="material-symbols-outlined text-xs">inventory</span> স্টক সামগ্রী
+                    </span>
+                    <div id="restore-stat-stock" class="text-base font-bold text-green-900 dark:text-green-200 mt-0.5">০ টি</div>
+                </div>
+                <div class="p-3 bg-purple-50/50 dark:bg-purple-900/20 rounded-xl border border-purple-100 dark:border-purple-800/40">
+                    <span class="text-[11px] text-purple-800 dark:text-purple-300 font-medium flex items-center gap-1">
+                        <span class="material-symbols-outlined text-xs">vaccines</span> ঔষধ রেকর্ড
+                    </span>
+                    <div id="restore-stat-meds" class="text-base font-bold text-purple-900 dark:text-purple-200 mt-0.5">০ টি</div>
+                </div>
+            </div>
+
+            <!-- Caution alert -->
+            <div class="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/50 rounded-xl text-xs text-amber-800 dark:text-amber-300 mb-5 flex items-start gap-2">
+                <span class="material-symbols-outlined text-sm flex-shrink-0 mt-0.5">warning</span>
+                <span>সতর্কতা: রিস্টোর সম্পন্ন হলে বর্তমান খামারের যাবতীয় ডেটা এই ব্যাকআপ ফাইলের ডেটা দ্বারা হালনাগাদ হবে।</span>
+            </div>
+
+            <!-- Action buttons -->
+            <div class="flex gap-2.5">
+                <button onclick="closeRestoreModal()" class="flex-1 py-3 px-4 rounded-xl border border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-300 font-bold text-sm hover:bg-gray-50 dark:hover:bg-gray-700 transition">
+                    বাতিল করুন
+                </button>
+                <button id="restore-confirm-btn" onclick="executeRestore()" class="flex-1 py-3 px-4 rounded-xl bg-teal-700 hover:bg-teal-800 text-white font-bold text-sm shadow-md hover:shadow-lg transition flex items-center justify-center gap-2">
+                    <span class="material-symbols-outlined text-sm">cloud_upload</span> হ্যাঁ, রিস্টোর করুন
+                </button>
+            </div>
+        </div>
+    </div>
+    <!-- ⏱️ End Shipment Timer Confirmation Modal -->
+    <div id="end-shipment-modal" class="hidden fixed inset-0 z-[75] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-[fadeIn_0.2s_ease-out]" onclick="if(event.target===this) closeEndShipmentModal()">
+        <div class="bg-white dark:bg-gray-800 w-full max-w-sm rounded-3xl p-6 shadow-2xl border border-gray-100 dark:border-gray-700 text-center space-y-4">
+            <div class="w-14 h-14 rounded-2xl bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 flex items-center justify-center mx-auto">
+                <span class="material-symbols-outlined text-3xl">timer_off</span>
+            </div>
+            <div>
+                <h3 class="text-lg font-bold text-gray-900 dark:text-white">চালান শেষ করবেন?</h3>
+                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1.5 leading-relaxed">
+                    চালান শেষ করলে এই চালানের চলমান টাইমার ঘড়ি স্থায়ীভাবে বন্ধ হয়ে যাবে এবং মোট সময় সংরক্ষিত থাকবে।
+                </p>
+            </div>
+            <div class="flex gap-2.5 pt-1">
+                <button type="button" onclick="closeEndShipmentModal()" class="flex-1 min-h-[44px] py-2.5 px-4 rounded-xl border border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-300 font-bold text-sm hover:bg-gray-50 dark:hover:bg-gray-700 transition">
+                    বাতিল
+                </button>
+                <button type="button" id="confirm-end-shipment-btn" onclick="confirmEndCurrentShipment()" class="flex-1 min-h-[44px] py-2.5 px-4 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-sm shadow-md transition">
+                    হ্যাঁ, চালান শেষ
+                </button>
+            </div>
+        </div>
+    </div>
+    <!-- 📱 iPhone Add to Home Screen Guide Modal -->
+    <div id="ios-install-guide-modal" class="hidden fixed inset-0 z-[76] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-[fadeIn_0.2s_ease-out]" onclick="if(event.target===this) closeIosInstallGuide()">
+        <div class="bg-white dark:bg-gray-800 w-full max-w-sm rounded-3xl p-6 shadow-2xl border border-gray-100 dark:border-gray-700 space-y-4">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2.5">
+                    <div class="w-10 h-10 rounded-xl bg-teal-50 dark:bg-teal-900/30 text-teal-700 dark:text-teal-400 flex items-center justify-center">
+                        <span class="material-symbols-outlined">add_to_home_screen</span>
+                    </div>
+                    <div>
+                        <h3 class="text-base font-bold text-gray-900 dark:text-white">iPhone-এ হোম স্ক্রিনে যোগ করুন</h3>
+                        <p class="text-[11px] text-gray-500 dark:text-gray-400">iOS 16.4+ ব্যাকগ্রাউন্ড নোটিফিকেশনের জন্য আবশ্যক</p>
+                    </div>
+                </div>
+                <button type="button" onclick="closeIosInstallGuide()" class="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 rounded-full transition">
+                    <span class="material-symbols-outlined text-lg">close</span>
+                </button>
+            </div>
+
+            <div class="space-y-2.5 text-xs text-gray-700 dark:text-gray-200">
+                <div class="p-3 rounded-xl bg-gray-50 dark:bg-gray-700/50 flex items-start gap-2.5">
+                    <span class="w-5 h-5 rounded-full bg-teal-700 text-white font-bold flex items-center justify-center flex-shrink-0 text-[11px]">১</span>
+                    <span>iPhone-এর <b>Safari</b> ব্রাউজার দিয়ে এই সাইটটি খুলুন।</span>
+                </div>
+                <div class="p-3 rounded-xl bg-gray-50 dark:bg-gray-700/50 flex items-start gap-2.5">
+                    <span class="w-5 h-5 rounded-full bg-teal-700 text-white font-bold flex items-center justify-center flex-shrink-0 text-[11px]">২</span>
+                    <span>নিচের <b>Share (⬆️)</b> আইকনে ট্যাপ করে <b>"Add to Home Screen"</b> সিলেক্ট করুন এবং <b>Add</b> চাপুন।</span>
+                </div>
+                <div class="p-3 rounded-xl bg-gray-50 dark:bg-gray-700/50 flex items-start gap-2.5">
+                    <span class="w-5 h-5 rounded-full bg-teal-700 text-white font-bold flex items-center justify-center flex-shrink-0 text-[11px]">৩</span>
+                    <span>এবার হোম স্ক্রিনের <b>আমার হিসাব</b> আইকন থেকে অ্যাপটি খুলে সেটিংস → <b>ফোন নোটিফিকেশন</b> চালু করুন।</span>
+                </div>
+            </div>
+
+            <button type="button" onclick="closeIosInstallGuide()" class="w-full min-h-[44px] py-2.5 rounded-xl bg-teal-700 hover:bg-teal-800 text-white font-bold text-sm transition">
+                বুঝেছি
+            </button>
+        </div>
+    </div>
+    <div id="toast" class="hidden fixed bottom-20 left-1/2 -translate-x-1/2 bg-gray-800 text-white px-5 py-2 rounded-full text-sm z-50 shadow-lg"></div>
+    <div id="pdf-overlay" class="hidden"><div id="pdf-content" style="padding:30px;font-family:'Noto Sans Bengali';background:white;color:black;"><div style="text-align:center;border-bottom:2px solid #00796B;padding-bottom:10px;margin-bottom:20px;"><h1 style="font-size:24px;color:#00796B;">আমার হিসাব</h1><p>পোল্ট্রি খামার রিপোর্ট</p></div><table style="width:100%;margin-bottom:20px;"><tr><td><h2 id="pdf-shipment-name"></h2><p id="pdf-shipment-date"></p></td><td style="text-align:right;"><span id="pdf-chicken-count"></span></td></tr></table><div style="display:flex;margin-bottom:20px;border:1px solid #ddd;"><div style="flex:1;background:#e0f7fa;padding:10px;border-right:1px solid #ddd;">আয়<br><b id="pdf-total-income"></b></div><div style="flex:1;background:#ffebee;padding:10px;border-right:1px solid #ddd;">ব্যয়<br><b id="pdf-total-expense"></b></div><div style="flex:1;background:#f1f8e9;padding:10px;">লাভ<br><b id="pdf-net-profit"></b></div></div><table class="pdf-table" style="width:100%;border-collapse:collapse;"><thead><tr style="background:#f2f2f2;"><th>তারিখ</th><th>বিবরণ</th><th>ধরন</th><th>পরিমাণ</th></tr></thead><tbody id="pdf-table-body"></tbody></table><div style="margin-top:30px;text-align:right;font-size:10px;">Dev - Shuvo</div></div></div>
+
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyBD3Ev8Gg2yValARgfxeRlSwDWrdERmtKE",
+            authDomain: "mypoltyfarm.firebaseapp.com",
+            databaseURL: "https://mypoltyfarm-default-rtdb.firebaseio.com",
+            projectId: "mypoltyfarm",
+            storageBucket: "mypoltyfarm.firebasestorage.app",
+            messagingSenderId: "620769276564",
+            appId: "1:620769276564:web:939c4e1065d8dfb9d6fa81"
+        };
+        const app = firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
+        const auth = firebase.auth();
+
+        // Safe global export
+        window.app = app;
+        window.db = db;
+        window.auth = auth;
+
+        let currentUser = null;
+        let pageHistory = ['dashboard'];
+        let currentShipmentId = null;
+        let currentEntryType = 'expense';
+        let currentEntryId = null;
+        let currentShipmentData = {};
+        let currentShipmentDetailRef = null;
+        
+        let activeShipmentsForTimer = {};
+        let activeAutoCloseTimers = {};
+
+        auth.onAuthStateChanged(user => {
+            if (user) {
+                currentUser = user;
+                document.getElementById('auth-page').classList.add('hidden');
+                document.getElementById('main-app').classList.remove('hidden');
+                document.getElementById('current-date').innerText = new Date().toLocaleDateString('bn-BD', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+                loadUserData();
+            } else {
+                currentUser = null;
+                document.getElementById('auth-page').classList.remove('hidden');
+                document.getElementById('main-app').classList.add('hidden');
+            }
+        });
+
+        function toggleTheme() {
+            const html = document.documentElement;
+            if (html.classList.contains('dark')) {
+                html.classList.remove('dark');
+                localStorage.setItem('theme', 'light');
+            } else {
+                html.classList.add('dark');
+                localStorage.setItem('theme', 'dark');
+            }
+        }
+
+        function handleGoogleLogin() {
+            const provider = new firebase.auth.GoogleAuthProvider();
+            auth.signInWithPopup(provider)
+                .then((result) => showToast("স্বাগতম " + result.user.displayName))
+                .catch((error) => alert("সমস্যা হয়েছে: " + error.message));
+        }
+
+        function handleForgotPassword() {
+            const email = document.getElementById('login-email').value;
+            if (!email) return alert("দয়া করে ইমেইল বক্সে আপনার ইমেইলটি লিখুন, তারপর আবার 'পাসওয়ার্ড ভুলে গেছেন' এ ক্লিক করুন।");
+            auth.sendPasswordResetEmail(email)
+                .then(() => alert("আপনার ইমেইলে রিসেট লিংক পাঠানো হয়েছে!"))
+                .catch((error) => alert("সমস্যা হয়েছে: " + error.message));
+        }
+
+        function handleLogin() { const e=document.getElementById('login-email').value,p=document.getElementById('login-pass').value; if(e&&p)auth.signInWithEmailAndPassword(e,p).catch(err=>alert(err.message)); }
+        function handleRegister() { const e=document.getElementById('reg-email').value,p=document.getElementById('reg-pass').value; if(e&&p)auth.createUserWithEmailAndPassword(e,p).catch(err=>alert(err.message)); }
+        function toggleAuthMode() { document.getElementById('login-form-container').classList.toggle('hidden'); document.getElementById('register-form-container').classList.toggle('hidden'); }
+        function logoutUser() { auth.signOut(); }
+
+        function loadUserData() {
+            if(!currentUser) return;
+            const uid = currentUser.uid;
+            const offlineShipments = localStorage.getItem('offline_shipments_' + uid);
+            if(offlineShipments) { activeShipmentsForTimer = JSON.parse(offlineShipments); renderShipments(activeShipmentsForTimer); }
+            const offlineDues = localStorage.getItem('offline_dues_' + uid);
+            if(offlineDues) renderDue(JSON.parse(offlineDues));
+            db.ref(`users/${uid}/shipments`).off('value');
+            db.ref(`users/${uid}/shipments`).on('value', s => {
+                const data = s.val();
+                if(data) { localStorage.setItem('offline_shipments_' + uid, JSON.stringify(data)); activeShipmentsForTimer = data; }
+                else { activeShipmentsForTimer = {}; }
+                renderShipments(data);
+            });
+            db.ref(`users/${uid}/due_list`).off('value');
+            db.ref(`users/${uid}/due_list`).on('value', s => {
+                const data = s.val();
+                if(data) localStorage.setItem('offline_dues_' + uid, JSON.stringify(data));
+                renderDue(data);
+            });
+        }
+
+        function navigate(p) { 
+            if (p === 'medicine-page' && !document.getElementById('medicine-page') && typeof injectMedicinePageIfReady === 'function') {
+                injectMedicinePageIfReady();
+            }
+            const targetEl = document.getElementById(p);
+            if (!targetEl) {
+                console.warn(`Target page "${p}" not found.`);
+                return;
+            }
+            document.querySelectorAll('.page').forEach(e=>e.classList.remove('page-visible')); 
+            targetEl.classList.add('page-visible'); 
+            pageHistory.push(p); 
+            const addShipBtn = document.getElementById('add-shipment-button-container');
+            if (addShipBtn) {
+                addShipBtn.classList.toggle('hidden', !['dashboard','shipments-page'].includes(p));
+            }
+            const bottomNav = document.getElementById('main-bottom-nav');
+            if (bottomNav) {
+                bottomNav.classList.toggle('hidden', p === 'pk-chatbot-page');
+            }
+        }
+        function goBack() { if(pageHistory.length>1) pageHistory.pop(); navigate(pageHistory[pageHistory.length-1]); pageHistory.pop(); }
+        function navigateToTab(p, evt) { 
+            if (evt && evt.preventDefault) evt.preventDefault();
+            pageHistory=[p]; 
+            navigate(p); 
+            document.querySelectorAll('.nav-item').forEach(e=>{ 
+                e.classList.remove('text-teal-700', 'dark:text-teal-400'); 
+                if(e.id===`nav-${p}`) e.classList.add('text-teal-700', 'dark:text-teal-400'); 
+            }); 
+            if (p === 'medicine-page') {
+                if (typeof loadMedicineShipmentDropdowns === 'function') {
+                    loadMedicineShipmentDropdowns();
+                }
+                if (typeof renderScheduleTimeline === 'function') {
+                    renderScheduleTimeline();
+                }
+            }
+            if (p === 'settings-page') {
+                if (typeof refreshPkBotUI === 'function') refreshPkBotUI();
+                if (typeof updatePushSettingsUI === 'function') updatePushSettingsUI();
+            }
+        }
+        function switchTab(t) { currentEntryType=t; document.getElementById('expense-list-container').classList.toggle('hidden', t!=='expense'); document.getElementById('income-list-container').classList.toggle('hidden', t!=='income'); document.getElementById('expense-tab-button').className=`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${t==='expense'?'bg-white dark:bg-gray-600 shadow text-teal-700 dark:text-white':'text-gray-500 dark:text-gray-400'}`; document.getElementById('income-tab-button').className=`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${t==='income'?'bg-white dark:bg-gray-600 shadow text-teal-700 dark:text-white':'text-gray-500 dark:text-gray-400'}`; }
+        function toggleMenu(id) { document.getElementById(id).classList.toggle('hidden'); }
+        document.onclick = (e) => { if(!e.target.closest('.relative')) document.querySelectorAll('#dropdownMenu, [id^="opt-"]').forEach(el=>el.classList.add('hidden')); };
+        
+        function saveShipment(e) { 
+            e.preventDefault(); 
+            if(!currentUser) return alert("লগইন নেই"); 
+            
+            const d={
+                name:document.getElementById('shipment-name').value, 
+                chickenCount:document.getElementById('shipment-chicken-count').value, 
+                startDate:document.getElementById('shipment-start-date').value,
+                timestamp: new Date().toISOString()
+            }; 
+            
+            if (!navigator.onLine) showToast("এড হয়েছে, আপডেট হতে নেটওয়ার্ক প্রয়োজন ⚠️");
+            
+            db.ref(`users/${currentUser.uid}/shipments`).push(d).then(()=>{
+                if(navigator.onLine) showToast("সফলভাবে সেভ হয়েছে ✅"); 
+                goBack();
+            }); 
+        }
+
+        function saveEntry(e) { 
+            e.preventDefault(); 
+            if(!currentUser) return; 
+            const d={amount:document.getElementById('entry-amount').value, date:document.getElementById('entry-date').value, note:document.getElementById('entry-note').value}; 
+            if(currentEntryType==='expense') d.type=document.getElementById('expense-type').value; 
+            else d.description=document.getElementById('income-description').value; 
+            
+            if (!navigator.onLine) showToast("এড হয়েছে, আপডেট হতে নেটওয়ার্ক প্রয়োজন ⚠️");
+            
+            const p=`users/${currentUser.uid}/shipments/${currentShipmentId}/${currentEntryType}s`; 
+            (currentEntryId?db.ref(`${p}/${currentEntryId}`).update(d):db.ref(p).push(d)).then(()=>{
+                if(navigator.onLine) showToast("সেভ হয়েছে ✅"); 
+                goBack();
+            }); 
+        }
+
+        function saveDue(e) { 
+            e.preventDefault(); 
+            const id=document.getElementById('due-id').value; 
+            const d={name:document.getElementById('due-name').value, mobile:document.getElementById('due-mobile').value, amount:document.getElementById('due-amount').value, date:document.getElementById('due-date').value, note:document.getElementById('due-note').value}; 
+            
+            if (!navigator.onLine) showToast("এড হয়েছে, আপডেট হতে নেটওয়ার্ক প্রয়োজন ⚠️");
+            
+            (id?db.ref(`users/${currentUser.uid}/due_list/${id}`).update(d):db.ref(`users/${currentUser.uid}/due_list`).push(d)).then(()=>{
+                if(navigator.onLine) showToast("সেভ হয়েছে ✅"); 
+                goBack();
+            }); 
+        }
+
+        function prepareEntryForm() { document.forms[1].reset(); currentEntryId=null; document.getElementById('entry-date').valueAsDate=new Date(); document.getElementById('entry-form-title').innerText=currentEntryType==='expense'?'নতুন খরচ':'নতুন আয়'; document.getElementById('expense-fields').classList.toggle('hidden', currentEntryType!=='expense'); document.getElementById('income-fields').classList.toggle('hidden', currentEntryType!=='income'); navigate('add-entry-page'); }
+        function prepareDueForm() { document.forms[2].reset(); document.getElementById('due-id').value=''; document.getElementById('due-date').valueAsDate=new Date(); navigate('add-due-page'); }
+        function editEntry(t,i) { db.ref(`users/${currentUser.uid}/shipments/${currentShipmentId}/${t}s/${i}`).once('value',s=>{ const d=s.val(); currentEntryId=i; document.getElementById('entry-amount').value=d.amount; document.getElementById('entry-date').value=d.date; document.getElementById('entry-note').value=d.note||''; if(t==='expense'){document.getElementById('expense-type').value=d.type;document.getElementById('expense-fields').classList.remove('hidden');document.getElementById('income-fields').classList.add('hidden');}else{document.getElementById('income-description').value=d.description;document.getElementById('expense-fields').classList.add('hidden');document.getElementById('income-fields').classList.remove('hidden');} navigate('add-entry-page'); }); }
+        function editDue(i) { db.ref(`users/${currentUser.uid}/due_list/${i}`).once('value',s=>{ const d=s.val(); document.getElementById('due-id').value=i; document.getElementById('due-name').value=d.name; document.getElementById('due-mobile').value=d.mobile; document.getElementById('due-amount').value=d.amount; document.getElementById('due-date').value=d.date; document.getElementById('due-note').value=d.note||''; navigate('add-due-page'); }); }
+        function deleteCurrentShipment() { if(confirm("মুছবেন?")) db.ref(`users/${currentUser.uid}/shipments/${currentShipmentId}`).remove().then(()=>navigate('dashboard')); }
+        function deleteEntry(t,i) { if(confirm("মুছবেন?")) db.ref(`users/${currentUser.uid}/shipments/${currentShipmentId}/${t}s/${i}`).remove(); }
+        function deleteDue(i) { if(confirm("মুছবেন?")) db.ref(`users/${currentUser.uid}/due_list/${i}`).remove(); }
+        function showToast(m) { const t=document.getElementById('toast'); t.innerText=m; t.classList.remove('hidden'); setTimeout(()=>t.classList.add('hidden'),3000); }
+        
+        const toBanglaNumber = num => num.toString().replace(/\d/g, d => "০১২৩৪৫৬৭৮৯"[d]);
+
+        function getChalanElapsedMs(chalan, nowOverride) {
+            if (!chalan) return 0;
+            const targetDateStr = chalan.timestamp ? chalan.timestamp : `${chalan.startDate}T00:00:00`;
+            const startTime = new Date(targetDateStr).getTime();
+            if (Number.isNaN(startTime)) return 0;
+            const endTime = (chalan.isEnded && chalan.endedAt) ? Number(chalan.endedAt) : (nowOverride || Date.now());
+            return endTime - startTime;
+        }
+
+        function formatChalanDurationBn(difference) {
+            if (difference < 0) return "শুরু হয়নি";
+            const days = Math.floor(difference / (1000 * 60 * 60 * 24));
+            const hours = Math.floor((difference % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+            const minutes = Math.floor((difference % (1000 * 60 * 60)) / (1000 * 60));
+            return `${toBanglaNumber(days)} দিন ${toBanglaNumber(hours)} ঘণ্টা ${toBanglaNumber(minutes)} মিনিট`;
+        }
+
+        function updateAllChalanTimers() {
+            if (!activeShipmentsForTimer) return;
+            const now = Date.now();
+
+            Object.keys(activeShipmentsForTimer).forEach(k => {
+                const chalan = activeShipmentsForTimer[k];
+                const difference = getChalanElapsedMs(chalan, now);
+                const formatted = formatChalanDurationBn(difference);
+                const suffix = chalan && chalan.isEnded ? ' (সমাপ্ত)' : '';
+
+                const txtElements = document.querySelectorAll(`.timer-txt-${k}`);
+                txtElements.forEach(el => {
+                    el.innerText = formatted + suffix;
+                });
+            });
+        }
+
+        setInterval(updateAllChalanTimers, 10000);
+
+        // 🛠️ ডাইনামিক আইডি হ্যান্ডলিং সিস্টেম অ্যাড করা হলো (যাতে হোম পেজ এবং অল পেজ দুই জায়গাতেই আলাদা কাজ করে)
+        function toggleTimerBadge(event, id, prefix) {
+            event.stopPropagation();
+            
+            const uniqueId = `${prefix}-${id}`;
+            const btn = document.getElementById(`timer-btn-${uniqueId}`);
+            const textWrap = document.getElementById(`timer-text-wrap-${uniqueId}`);
+
+            if (btn.classList.contains('is-open')) {
+                closeTimerBadge(id, prefix);
+            } else {
+                btn.classList.add('is-open', 'bg-teal-50', 'dark:bg-teal-900/30', 'px-2.5', 'py-1', 'rounded-lg');
+                textWrap.classList.remove('max-w-0', 'opacity-0');
+                textWrap.classList.add('max-w-[200px]', 'opacity-100', 'ml-1');
+
+                if (activeAutoCloseTimers[uniqueId]) clearTimeout(activeAutoCloseTimers[uniqueId]);
+
+                activeAutoCloseTimers[uniqueId] = setTimeout(() => {
+                    closeTimerBadge(id, prefix);
+                }, 5000);
+            }
+        }
+
+        function closeTimerBadge(id, prefix) {
+            const uniqueId = `${prefix}-${id}`;
+            const btn = document.getElementById(`timer-btn-${uniqueId}`);
+            const textWrap = document.getElementById(`timer-text-wrap-${uniqueId}`);
+
+            if (!btn) return;
+
+            btn.classList.remove('is-open', 'bg-teal-50', 'dark:bg-teal-900/30', 'px-2.5', 'py-1', 'rounded-lg');
+            textWrap.classList.remove('max-w-[200px]', 'opacity-100', 'ml-1');
+            textWrap.classList.add('max-w-0', 'opacity-0');
+            
+            if (activeAutoCloseTimers[uniqueId]) {
+                clearTimeout(activeAutoCloseTimers[uniqueId]);
+                delete activeAutoCloseTimers[uniqueId];
+            }
+        }
+
+        // 🐓 জেনারেট এইচটিএমএল ফাংশন (ডুপ্লিকেট কোড কমানোর জন্য এবং প্রিফিক্স দিয়ে ডাইনামিক করার জন্য)
+        function createChalanHTML(k, chalan, prefix) {
+            const uniqueId = `${prefix}-${k}`;
+            const endedBadge = chalan.isEnded
+                ? `<span class="inline-block ml-1.5 text-[10px] font-bold px-2 py-0.5 rounded-md bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">সমাপ্ত</span>`
+                : '';
+            const timerIcon = chalan.isEnded ? '⏹️' : '⏱️';
+            const timerTextClass = chalan.isEnded ? 'text-gray-600 dark:text-gray-300' : 'text-teal-600 dark:text-teal-400';
+            return `<div onclick="viewShipment('${k}')" class="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm flex items-center justify-between border border-gray-100 dark:border-gray-700 hover:shadow-md transition cursor-pointer select-none">
+                <div class="flex items-center gap-4 min-w-0">
+                    <div class="w-12 h-12 bg-teal-50 dark:bg-teal-900/30 rounded-full flex items-center justify-center text-2xl flex-shrink-0">🐔</div>
+                    <div class="min-w-0">
+                        <h3 class="font-bold text-gray-800 dark:text-gray-100 text-sm sm:text-base truncate">${chalan.name}${endedBadge}</h3>
+                        <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">${chalan.startDate}</p>
+                    </div>
+                </div>
+                <div class="text-right flex items-center justify-end flex-shrink-0">
+                    <div id="timer-btn-${uniqueId}" onclick="toggleTimerBadge(event, '${k}', '${prefix}')" class="flex items-center justify-center overflow-hidden transition-all duration-500 ease-in-out cursor-pointer active:scale-95">
+                        <span class="text-xl sm:text-2xl p-1 block">${timerIcon}</span>
+                        <div id="timer-text-wrap-${uniqueId}" class="max-w-0 opacity-0 overflow-hidden transition-all duration-500 ease-in-out whitespace-nowrap">
+                            <span class="timer-txt-${k} text-xs font-bold ${timerTextClass}">হিসাব হচ্ছে...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>`;
+        }
+
+        function renderShipments(data) { 
+            const list=document.getElementById('ongoing-shipments-list'), all=document.getElementById('all-shipments-list'); 
+            list.innerHTML=all.innerHTML=''; 
+            if(!data){ list.innerHTML="<p class='text-center text-gray-400 py-10 dark:text-gray-500'>কোনো চালান নেই</p>"; return; } 
+            
+            let total=0; 
+            Object.keys(data).reverse().forEach(k => { 
+                total++; 
+                // সব চালান পেজের জন্য 'all' প্রিফিক্স দিয়ে জেনারেট হবে
+                all.innerHTML += createChalanHTML(k, data[k], 'all'); 
+                
+                // হোম পেজের জন্য সর্বোচ্চ ৩টি চালান 'home' প্রিফিক্স দিয়ে জেনারেট হবে
+                if(list.children.length < 3) {
+                    list.innerHTML += createChalanHTML(k, data[k], 'home');
+                }
+            }); 
+            
+            document.getElementById('dashboard-summary').innerHTML=`<div class="bg-gradient-to-r from-teal-600 to-teal-500 rounded-2xl p-6 text-white shadow-lg shadow-teal-200 dark:shadow-none"><p class="text-teal-100 text-sm font-medium">মোট চালান</p><h2 class="text-4xl font-bold mt-1">${total}</h2></div>`; 
+            updateAllChalanTimers();
+        }
+
+        function renderDue(data) { const el=document.getElementById('due-list-container'); el.innerHTML=''; let t=0; if(data) Object.entries(data).reverse().forEach(([k,v])=>{ t+= +v.amount; el.innerHTML+=`<div class="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm flex justify-between items-start border border-gray-50 dark:border-gray-700"><div class="flex-1 min-w-0 mr-3"><h3 class="font-bold text-gray-800 dark:text-gray-100 break-all">${v.name}</h3><p class="text-xs text-gray-500 dark:text-gray-400">${v.mobile||''}</p><p class="text-xs text-gray-400 mt-1">${v.date}</p></div><div class="text-right flex-shrink-0"><p class="font-bold text-red-500 text-lg">৳${v.amount}</p><div class="relative mt-2"><button onclick="event.stopPropagation(); toggleMenu('due-opt-${k}')" class="p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700"><span class="material-symbols-outlined text-gray-400">more_vert</span></button><div id="due-opt-${k}" class="hidden absolute right-0 mt-1 w-32 bg-white dark:bg-gray-700 shadow-xl rounded-xl z-10 border dark:border-gray-600 overflow-hidden"><button onclick="editDue('${k}')" class="w-full text-left px-4 py-3 text-sm hover:bg-gray-50 dark:hover:bg-gray-600 dark:text-white">এডিট</button><button onclick="deleteDue('${k}')" class="w-full text-left px-4 py-3 text-sm text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20">ডিলিট</button></div></div></div></div>`; }); document.getElementById('total-due-amount').innerText = `৳${t.toLocaleString('bn-BD')}`; }
+        
+        function openEndShipmentModal() {
+            const modal = document.getElementById('end-shipment-modal');
+            if (modal) modal.classList.remove('hidden');
+        }
+
+        function closeEndShipmentModal() {
+            const modal = document.getElementById('end-shipment-modal');
+            if (modal) modal.classList.add('hidden');
+        }
+
+        async function confirmEndCurrentShipment() {
+            if (!currentUser || !currentShipmentId) {
+                closeEndShipmentModal();
+                return;
+            }
+            const uid = currentUser.uid;
+            const endedAt = Date.now();
+            const endedDate = new Date(endedAt).toISOString().split('T')[0];
+            const updates = {
+                isEnded: true,
+                endedAt,
+                endedDate
+            };
+
+            currentShipmentData = { ...(currentShipmentData || {}), ...updates };
+            if (activeShipmentsForTimer && activeShipmentsForTimer[currentShipmentId]) {
+                activeShipmentsForTimer[currentShipmentId] = {
+                    ...activeShipmentsForTimer[currentShipmentId],
+                    ...updates
+                };
+            }
+            try {
+                const offlineStr = localStorage.getItem('offline_shipments_' + uid);
+                if (offlineStr) {
+                    const parsed = JSON.parse(offlineStr);
+                    if (parsed && parsed[currentShipmentId]) {
+                        parsed[currentShipmentId] = { ...parsed[currentShipmentId], ...updates };
+                        localStorage.setItem('offline_shipments_' + uid, JSON.stringify(parsed));
+                    }
+                }
+            } catch (e) {}
+
+            closeEndShipmentModal();
+            renderShipmentStatusCard(currentShipmentId, currentShipmentData);
+            if (activeShipmentsForTimer) renderShipments(activeShipmentsForTimer);
+            showToast("⏹️ চালান শেষ করা হয়েছে — টাইমার বন্ধ রাখা হয়েছে ✅");
+
+            try {
+                await db.ref(`users/${uid}/shipments/${currentShipmentId}`).update(updates);
+            } catch (err) {
+                console.warn("Offline or error updating ended state:", err);
+            }
+        }
+
+        function renderShipmentStatusCard(id, d) {
+            const cardEl = document.getElementById('details-timer-status-card');
+            if (!cardEl || !d) return;
+
+            const elapsedMs = getChalanElapsedMs(d);
+            const elapsedDays = elapsedMs > 0 ? Math.floor(elapsedMs / (1000 * 60 * 60 * 24)) : 0;
+            const durationStr = formatChalanDurationBn(elapsedMs);
+
+            if (d.isEnded) {
+                cardEl.className = "bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl p-4 flex items-center justify-between gap-3";
+                cardEl.innerHTML = `
+                    <div class="min-w-0">
+                        <p class="text-[11px] font-bold text-gray-500 dark:text-gray-400 flex items-center gap-1">
+                            <span class="material-symbols-outlined text-sm text-gray-600 dark:text-gray-300">timer_off</span>
+                            চালান সমাপ্ত · টাইমার বন্ধ
+                        </p>
+                        <p class="timer-txt-${id} text-sm font-bold text-gray-900 dark:text-white mt-0.5 tabular-nums">${durationStr} (সমাপ্ত)</p>
+                        ${d.endedDate ? `<p class="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">সমাপ্তির তারিখ: ${d.endedDate}</p>` : ''}
+                    </div>
+                    <span class="px-3 py-1.5 rounded-xl bg-emerald-100 dark:bg-emerald-900/30 text-emerald-800 dark:text-emerald-300 text-xs font-bold flex-shrink-0">সম্পন্ন</span>
+                `;
+                return;
+            }
+
+            if (elapsedDays >= 20) {
+                cardEl.className = "bg-white dark:bg-gray-800 border border-teal-200 dark:border-teal-800/60 rounded-2xl p-4 shadow-sm flex items-center justify-between gap-3";
+                cardEl.innerHTML = `
+                    <div class="min-w-0">
+                        <p class="text-[11px] font-bold text-teal-700 dark:text-teal-400 flex items-center gap-1">
+                            <span class="material-symbols-outlined text-sm">timer</span>
+                            চালানের চলমান সময় (${toBanglaNumber(elapsedDays)} দিন+)
+                        </p>
+                        <p class="timer-txt-${id} text-sm font-bold text-gray-900 dark:text-white mt-0.5 tabular-nums">${durationStr}</p>
+                    </div>
+                    <button type="button" onclick="openEndShipmentModal()" class="min-h-[44px] px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm active:scale-95 transition flex-shrink-0">
+                        <span class="material-symbols-outlined text-base">stop_circle</span>
+                        <span>চালান শেষ</span>
+                    </button>
+                `;
+                return;
+            }
+
+            cardEl.className = "bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-2xl p-3.5 shadow-sm flex items-center justify-between gap-3";
+            cardEl.innerHTML = `
+                <div class="min-w-0">
+                    <p class="text-[11px] font-bold text-teal-700 dark:text-teal-400 flex items-center gap-1">
+                        <span class="material-symbols-outlined text-sm">timer</span>
+                        চালানের চলমান ঘড়ি
+                    </p>
+                    <p class="timer-txt-${id} text-sm font-bold text-gray-900 dark:text-white mt-0.5 tabular-nums">${durationStr}</p>
+                </div>
+                <span class="text-[11px] font-semibold text-gray-500 dark:text-gray-400 text-right">২০ দিন পর<br>শেষ বাটন আসবে</span>
+            `;
+        }
+
+        function viewShipment(id) { 
+            currentShipmentId = id; 
+            navigate('shipment-details-page'); 
+            const renderUI = (d) => {
+                currentShipmentData = d; 
+                document.getElementById('details-shipment-name').innerText = d.name; 
+                renderShipmentStatusCard(id, d);
+                const exp = Object.values(d.expenses||{}), inc = Object.values(d.incomes||{}); 
+                const te = exp.reduce((a,b)=>a+(+b.amount),0), ti = inc.reduce((a,b)=>a+(+b.amount),0), p = ti-te; 
+                document.getElementById('details-summary-cards').innerHTML = `<div class="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700"><p class="text-xs text-gray-500 dark:text-gray-400 uppercase font-bold tracking-wider">লাভ / লস</p><p class="text-2xl font-bold mt-1 ${p>=0?'text-green-600':'text-red-500'}">৳${p.toLocaleString()}</p></div><div class="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700"><p class="text-xs text-gray-500 dark:text-gray-400 uppercase font-bold tracking-wider">মোট আয়</p><p class="text-2xl font-bold mt-1 text-teal-600 dark:text-teal-400">৳${ti.toLocaleString()}</p></div><div class="col-span-2 bg-white dark:bg-gray-800 p-5 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 flex justify-between items-center"><div><p class="text-xs text-gray-500 dark:text-gray-400 uppercase font-bold tracking-wider">মোট ব্যয়</p><p class="text-2xl font-bold mt-1 text-red-500">৳${te.toLocaleString()}</p></div></div>`; 
+                const row = (list, t) => Object.entries(list||{}).reverse().map(([k,v])=>`<div class="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm flex justify-between items-start border border-gray-50 dark:border-gray-700"><div class="flex-1 min-w-0 mr-3"><h4 class="font-bold text-gray-800 dark:text-gray-200 break-all">${t==='expense'?v.type:v.description}</h4><p class="text-xs text-gray-500 dark:text-gray-400 mt-1">${v.date}</p>${v.note?`<p class="text-xs text-gray-400 mt-1 bg-gray-50 dark:bg-gray-700 inline-block px-2 py-1 rounded break-all whitespace-normal">📝 ${v.note}</p>`:''}</div><div class="text-right flex-shrink-0"><p class="font-bold text-gray-800 dark:text-gray-200">৳${v.amount}</p><div class="relative mt-2"><button onclick="event.stopPropagation(); toggleMenu('opt-${k}')" class="p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700"><span class="material-symbols-outlined text-gray-400">more_vert</span></button><div id="opt-${k}" class="hidden absolute right-0 mt-1 w-32 bg-white dark:bg-gray-700 shadow-xl rounded-xl z-10 border dark:border-gray-600 overflow-hidden"><button onclick="editEntry('${t}','${k}')" class="w-full text-left px-4 py-3 text-sm hover:bg-gray-50 dark:hover:bg-gray-600 dark:text-white">এডিট</button><button onclick="deleteEntry('${t}','${k}')" class="w-full text-left px-4 py-3 text-sm text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20">ডিলিট</button></div></div></div></div>`).join(''); 
+                document.getElementById('expense-list-container').innerHTML = row(d.expenses,'expense') || '<div class="text-center py-10 text-gray-400 dark:text-gray-500">খরচ নেই</div>'; 
+                document.getElementById('income-list-container').innerHTML = row(d.incomes,'income') || '<div class="text-center py-10 text-gray-400 dark:text-gray-500">আয় নেই</div>';
+            };
+            const offlineData = localStorage.getItem('offline_shipments_' + currentUser.uid);
+            if (offlineData) { const parsedData = JSON.parse(offlineData); if (parsedData[id]) renderUI(parsedData[id]); }
+            if (currentShipmentDetailRef) currentShipmentDetailRef.off('value');
+            currentShipmentDetailRef = db.ref(`users/${currentUser.uid}/shipments/${id}`);
+            currentShipmentDetailRef.on('value', s => { if(!s.exists()) return; renderUI(s.val()); }); 
+        }
+
+        function openCategoryReport() {
+            if (!currentShipmentData.expenses) { alert("কোনো খরচ নেই!"); return; }
+            const expenses = Object.values(currentShipmentData.expenses);
+            const grouped = {}; let total = 0;
+            expenses.forEach(e => { if (!grouped[e.type]) grouped[e.type] = { amount: 0, items: [] }; grouped[e.type].amount += +e.amount; grouped[e.type].items.push(e); total += +e.amount; });
+            const content = document.getElementById('category-report-content'); content.innerHTML = '';
+            Object.entries(grouped).forEach(([type, data]) => {
+                const percent = ((data.amount / total) * 100).toFixed(0);
+                content.innerHTML += `<details class="bg-gray-50 dark:bg-gray-700 rounded-xl overflow-hidden group border border-gray-100 dark:border-gray-600"><summary class="flex justify-between items-center p-4 hover:bg-gray-100 dark:hover:bg-gray-600 cursor-pointer select-none"><div><span class="font-bold text-gray-800 dark:text-gray-200">${type}</span><div class="w-24 bg-gray-200 dark:bg-gray-500 rounded-full h-1.5 mt-1"><div class="bg-teal-600 dark:bg-teal-400 h-1.5 rounded-full" style="width: ${percent}%"></div></div></div><span class="font-bold text-teal-700 dark:text-teal-400">৳${data.amount}</span></summary><div class="bg-white dark:bg-gray-800 p-4 border-t border-gray-100 dark:border-gray-600 text-sm space-y-2">${data.items.map(i => `<div class="flex justify-between text-gray-500 dark:text-gray-400"><span>${i.date}</span><span>৳${i.amount}</span></div>`).join('')}</div></details>`;
+            });
+            document.getElementById('category-modal').classList.remove('hidden');
+        }
+
+        function calculateFCR() {
+            const toEn = n => n.replace(/[০-৯]/g, d => "০১২৩৪৫৬৭৮৯".indexOf(d));
+            const b = parseFloat(toEn(document.getElementById('fcr-bags').value)) || 0;
+            const e = parseFloat(toEn(document.getElementById('fcr-extra-feed').value)) || 0;
+            const w = parseFloat(toEn(document.getElementById('fcr-total-weight').value)) || 0;
+            if(w > 0){
+                const totalFeed = (b * 50) + e;
+                const f = totalFeed / w;
+                document.getElementById('fcr-result').classList.remove('hidden');
+                document.getElementById('fcr-value').innerText = f.toFixed(2);
+                document.getElementById('fcr-total-feed-display').innerText = `মোট খাবার: ${totalFeed} কেজি`;
+                let msg = f <= 1.49 ? "অসাধারণ 🤩" : f <= 1.69 ? "ভালো 🙂" : f <= 1.89 ? "গড়পড়তা 😐" : "মন্দ 😟";
+                document.getElementById('fcr-status-title').innerText = msg;
+            } else alert("দয়া করে সঠিক ওজন দিন");
+        }
+
+        function sharePDF() { db.ref(`users/${currentUser.uid}/shipments/${currentShipmentId}`).once('value',s=>{ const d=s.val(); document.getElementById('pdf-shipment-name').innerText=d.name; document.getElementById('pdf-shipment-date').innerText=d.startDate; document.getElementById('pdf-chicken-count').innerText="মুরগি: "+d.chickenCount; let ti=0,te=0,h=''; const all=[...Object.values(d.expenses||{}).map(x=>({...x,t:'ব্যয়'})),...Object.values(d.incomes||{}).map(x=>({...x,t:'আয়'}))].sort((a,b)=>new Date(a.date)-new Date(b.date)); all.forEach(x=>{ if(x.t==='ব্যয়')te+=+x.amount;else ti+=+x.amount; h+=`<tr><td>${x.date}</td><td>${x.type||x.description}</td><td>${x.t}</td><td style="text-align:right">${x.amount}</td></tr>`; }); document.getElementById('pdf-total-income').innerText="৳"+ti; document.getElementById('pdf-total-expense').innerText="৳"+te; document.getElementById('pdf-net-profit').innerText="৳"+(ti-te); document.getElementById('pdf-table-body').innerHTML=h; document.getElementById('pdf-overlay').style.display='block'; html2pdf().from(document.getElementById('pdf-content')).save().then(()=>document.getElementById('pdf-overlay').style.display='none'); }); }
+
+        function formatDriveEmbedUrl(url) {
+            if (!url) return "https://drive.google.com/file/d/1ErsItnwlAp3miAbUdC-KTNR3OnHQmm5l/preview";
+            if (url.includes('drive.google.com')) {
+                const match = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/) || url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+                if (match && match[1]) {
+                    return `https://drive.google.com/file/d/${match[1]}/preview`;
+                }
+            }
+            if (url.includes('youtu.be/')) {
+                const id = url.split('youtu.be/')[1].split(/[?&]/)[0];
+                return `https://www.youtube.com/embed/${id}?autoplay=1`;
+            }
+            if (url.includes('youtube.com/watch')) {
+                const urlParams = new URLSearchParams(url.split('?')[1]);
+                const id = urlParams.get('v');
+                if (id) return `https://www.youtube.com/embed/${id}?autoplay=1`;
+            }
+            return url;
+        }
+
+        function openVideoModal(breedName, videoUrl) { 
+            const modal = document.getElementById('video-modal');
+            const frame = document.getElementById('youtube-frame');
+            const titleEl = document.getElementById('video-modal-title');
+            const subtitleEl = document.getElementById('video-modal-subtitle');
+            const breedTagEl = document.getElementById('video-breed-tag');
+            const externalLinkEl = document.getElementById('video-external-link');
+
+            let rawUrl = videoUrl;
+            let displayBreed = breedName || (typeof currentBreedFilter !== 'undefined' ? currentBreedFilter : 'Broiler');
+            
+            // Map breed to Bangla names
+            const breedBangla = {
+                'Broiler': 'ব্রয়লার',
+                'ColorBird': 'কালার বার্ড',
+                'Sonali': 'সোনালি',
+                'Deshi': 'দেশি'
+            };
+            const banglaTitle = breedBangla[displayBreed] || displayBreed;
+
+            if (!rawUrl) {
+                if (typeof getBreedVideoUrl === 'function') {
+                    rawUrl = getBreedVideoUrl(displayBreed);
+                } else {
+                    rawUrl = "https://drive.google.com/file/d/1ErsItnwlAp3miAbUdC-KTNR3OnHQmm5l/preview";
+                }
+            }
+
+            const embedUrl = formatDriveEmbedUrl(rawUrl);
+
+            if (titleEl) titleEl.innerText = `${banglaTitle} - ভিডিও গাইড`;
+            if (subtitleEl) subtitleEl.innerText = `${banglaTitle} মুরগির পরিচর্যা ও চিকিৎসা নির্দেশিকা`;
+            if (breedTagEl) breedTagEl.innerText = banglaTitle;
+            if (externalLinkEl) {
+                externalLinkEl.href = rawUrl || embedUrl;
+            }
+
+            if (frame) frame.src = embedUrl;
+            if (modal) modal.classList.remove('hidden'); 
+        }
+
+        function closeVideoModal() { 
+            const modal = document.getElementById('video-modal');
+            const frame = document.getElementById('youtube-frame');
+            if (modal) modal.classList.add('hidden'); 
+            if (frame) frame.src = ""; 
+        }
+
+        // ==========================================
+        // 💾 খামারের সম্পূর্ণ ডেটা ব্যাকআপ ও রিস্টোর (Backup & Restore)
+        // ==========================================
+        let pendingRestoreData = null;
+
+        async function exportFarmDataBackup() {
+            if (!currentUser) {
+                showToast("⚠️ ব্যাকআপ ডাউনলোড করতে প্রথমে লগইন করুন!");
+                return;
+            }
+
+            showToast("⏳ সম্পূর্ণ খামারের ব্যাকআপ ফাইল প্রস্তুত হচ্ছে...");
+
+            const uid = currentUser.uid;
+            let farmData = {};
+
+            // ১. ফায়ারবেস ক্লাউড ডাটাবেজ থেকে ইউজারের সম্পূর্ণ ডেটা সংগ্রহ
+            try {
+                const snapshot = await db.ref(`users/${uid}`).once('value');
+                if (snapshot.exists()) {
+                    farmData = snapshot.val() || {};
+                }
+            } catch (err) {
+                console.warn("Firebase fetch failed or offline, fallback to local storage:", err);
+            }
+
+            // ২. লোকাল ক্যাশ থেকে মিসিং ডাটা ব্যাকআপে যুক্ত করা (অফলাইন সুরক্ষা)
+            const localShipments = JSON.parse(localStorage.getItem('offline_shipments_' + uid) || '{}');
+            const localDues = JSON.parse(localStorage.getItem('offline_dues_' + uid) || '{}');
+            const localMeds = JSON.parse(localStorage.getItem(`completed_meds_${uid}`) || '{}');
+
+            if (!farmData.shipments || Object.keys(farmData.shipments).length === 0) {
+                if (Object.keys(localShipments).length > 0) farmData.shipments = localShipments;
+            }
+            if (!farmData.due_list || Object.keys(farmData.due_list).length === 0) {
+                if (Object.keys(localDues).length > 0) farmData.due_list = localDues;
+            }
+            if (!farmData.completed_medicines || Object.keys(farmData.completed_medicines).length === 0) {
+                if (Object.keys(localMeds).length > 0) farmData.completed_medicines = localMeds;
+            }
+
+            // স্টক ডাটা যদি allStockData তে থাকে
+            if (!farmData.stock && typeof allStockData !== 'undefined' && Array.isArray(allStockData) && allStockData.length > 0) {
+                const stockObj = {};
+                allStockData.forEach(item => {
+                    if (item.id) {
+                        const { id, ...rest } = item;
+                        stockObj[id] = rest;
+                    }
+                });
+                farmData.stock = stockObj;
+            }
+
+            const shipmentsCount = Object.keys(farmData.shipments || {}).length;
+            const duesCount = Object.keys(farmData.due_list || {}).length;
+            const stockCount = Object.keys(farmData.stock || {}).length;
+            const medsCount = Object.keys(farmData.completed_medicines || {}).length;
+
+            const now = new Date();
+            const pad = n => String(n).padStart(2, '0');
+            const dateStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+            const timeStr = `${pad(now.getHours())}-${pad(now.getMinutes())}`;
+            const fileName = `amar_hisab_farm_backup_${dateStr}_${timeStr}.json`;
+
+            const fullBackup = {
+                appName: "আমার হিসাব - স্মার্ট পোল্ট্রি খামার",
+                backupVersion: "1.0",
+                backupType: "full_farm_backup",
+                exportTimestamp: now.getTime(),
+                exportDate: now.toISOString(),
+                exportDateFormatted: now.toLocaleDateString('bn-BD', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
+                userId: uid,
+                userEmail: currentUser.email || '',
+                summary: {
+                    totalShipments: shipmentsCount,
+                    totalDues: duesCount,
+                    totalStockItems: stockCount,
+                    totalCompletedMedicines: medsCount
+                },
+                farmData: farmData
+            };
+
+            const jsonString = JSON.stringify(fullBackup, null, 2);
+            const blob = new Blob([jsonString], { type: "application/json;charset=utf-8" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = fileName;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setTimeout(() => URL.revokeObjectURL(url), 1500);
+
+            showToast(`✅ ব্যাকআপ ডাউনলোড সম্পন্ন! (${toBanglaNumber(shipmentsCount)}টি চালান)`);
+        }
+
+        function triggerRestoreFileInput() {
+            if (!currentUser) {
+                showToast("⚠️ রিস্টোর করার জন্য প্রথমে লগইন করুন!");
+                return;
+            }
+            const input = document.getElementById('backup-file-input');
+            if (input) input.click();
+        }
+
+        function handleBackupFileSelect(event) {
+            const file = event.target.files && event.target.files[0];
+            if (!file) return;
+
+            // পুনরায় নির্বাচন সহজ করার জন্য রিসেট
+            event.target.value = '';
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const parsed = JSON.parse(e.target.result);
+                    previewRestoreData(parsed, file.name);
+                } catch (err) {
+                    alert("❌ ব্যাকআপ ফাইলটি পড়া যাচ্ছে না! অনুগ্রহ করে সঠিক .json ব্যাকআপ ফাইল আপলোড করুন।");
+                }
+            };
+            reader.onerror = function() {
+                alert("❌ ফাইল লোড করতে সমস্যা হয়েছে!");
+            };
+            reader.readAsText(file);
+        }
+
+        function previewRestoreData(parsed, fileName) {
+            let farmData = null;
+            let backupDate = null;
+
+            if (parsed && typeof parsed === 'object') {
+                if (parsed.farmData && typeof parsed.farmData === 'object') {
+                    farmData = parsed.farmData;
+                    backupDate = parsed.exportDateFormatted || parsed.exportDate;
+                } else if (parsed.data && typeof parsed.data === 'object') {
+                    farmData = parsed.data;
+                    backupDate = parsed.exportDateFormatted || parsed.exportDate;
+                } else if (parsed.shipments || parsed.due_list || parsed.stock || parsed.completed_medicines) {
+                    farmData = parsed;
+                }
+            }
+
+            if (!farmData || typeof farmData !== 'object' || Object.keys(farmData).length === 0) {
+                alert("❌ এই ফাইলে কোনো খামারের তথ্য পাওয়া যায়নি!");
+                return;
+            }
+
+            pendingRestoreData = farmData;
+
+            const shipmentsCount = Object.keys(farmData.shipments || {}).length;
+            const duesCount = Object.keys(farmData.due_list || {}).length;
+            const stockCount = Object.keys(farmData.stock || {}).length;
+            const medsCount = Object.keys(farmData.completed_medicines || {}).length;
+
+            document.getElementById('restore-modal-filename').innerText = fileName;
+            document.getElementById('restore-modal-date').innerText = backupDate ? `তারিখ: ${backupDate}` : 'তারিখ: ফাইল থেকে সনাক্তকৃত';
+            document.getElementById('restore-stat-shipments').innerText = `${toBanglaNumber(shipmentsCount)} টি`;
+            document.getElementById('restore-stat-dues').innerText = `${toBanglaNumber(duesCount)} টি`;
+            document.getElementById('restore-stat-stock').innerText = `${toBanglaNumber(stockCount)} টি`;
+            document.getElementById('restore-stat-meds').innerText = `${toBanglaNumber(medsCount)} টি`;
+
+            const modal = document.getElementById('restore-confirm-modal');
+            if (modal) modal.classList.remove('hidden');
+        }
+
+        function closeRestoreModal() {
+            const modal = document.getElementById('restore-confirm-modal');
+            if (modal) modal.classList.add('hidden');
+            pendingRestoreData = null;
+        }
+
+        async function executeRestore() {
+            if (!pendingRestoreData || !currentUser) {
+                closeRestoreModal();
+                return;
+            }
+
+            const btn = document.getElementById('restore-confirm-btn');
+            const originalText = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = `<span class="material-symbols-outlined animate-spin text-sm">progress_activity</span> রিস্টোর হচ্ছে...`;
+
+            const uid = currentUser.uid;
+            const dataToRestore = pendingRestoreData;
+
+            try {
+                // ১. ক্লাউড ডাটাবেজে আপডেট
+                await db.ref(`users/${uid}`).update(dataToRestore);
+            } catch (err) {
+                console.warn("Cloud restore error or offline mode:", err);
+            }
+
+            // ২. অফলাইন লোকালস্টোরেজে আপডেট
+            if (dataToRestore.shipments) {
+                localStorage.setItem('offline_shipments_' + uid, JSON.stringify(dataToRestore.shipments));
+                activeShipmentsForTimer = dataToRestore.shipments;
+            }
+            if (dataToRestore.due_list) {
+                localStorage.setItem('offline_dues_' + uid, JSON.stringify(dataToRestore.due_list));
+            }
+            if (dataToRestore.completed_medicines) {
+                localStorage.setItem(`completed_meds_${uid}`, JSON.stringify(dataToRestore.completed_medicines));
+            }
+            if (dataToRestore.skipped_medicines) {
+                localStorage.setItem(`skipped_meds_${uid}`, JSON.stringify(dataToRestore.skipped_medicines));
+            }
+
+            // ৩. অ্যাপের ইন্টারফেস রিফ্রেশ করা
+            loadUserData();
+            if (typeof loadStockData === 'function') loadStockData();
+            if (typeof initCompletedMedicinesListener === 'function') initCompletedMedicinesListener(uid);
+            if (typeof loadMedicineShipmentDropdowns === 'function') loadMedicineShipmentDropdowns();
+            if (typeof startStockListener === 'function') startStockListener(uid);
+
+            btn.disabled = false;
+            btn.innerHTML = originalText;
+            closeRestoreModal();
+
+            showToast("🎉 সফলভাবে সম্পূর্ণ খামারের ডেটা রিস্টোর সম্পন্ন হয়েছে!");
+            navigateToTab('dashboard');
+        }
+
+        navigateToTab('dashboard');
+    </script>
+    <script src="notifications.js?v=39"></script>
+    <script src="stock.js"></script>
+    <script src="daily_report.js"></script>
+    <script src="medicine.js?v=39"></script>
+    <script src="pk_chatbot.js?v=39"></script>
+    <script src="push_notifications.js?v=39"></script>
+    
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('sw.js?v=39').then(reg => {
+                    reg.update();
+                }).catch(e => console.warn('SW registration warning:', e));
+            });
+        }
+    </script>
+</body>
+</html>

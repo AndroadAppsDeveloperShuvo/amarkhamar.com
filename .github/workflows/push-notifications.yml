@@ -1,0 +1,46 @@
+name: Scheduled Farm & Feed/Water Web Push Notifications
+
+on:
+  schedule:
+    # Bangladesh Time (UTC+6):
+    - cron: '5 0 * * *'   # 06:05 AM BDT - Morning medicine reminder
+    - cron: '5 6 * * *'   # 12:05 PM BDT - Noon medicine reminder
+    - cron: '0 7 * * *'   # 01:00 PM BDT - 1:00 PM Feed & Water check
+    - cron: '30 9 * * *'  # 03:30 PM BDT - 3:30 PM Feed & Water check
+    - cron: '5 10 * * *'  # 04:05 PM BDT - Night medicine unlock reminder
+    - cron: '0 15 * * *'  # 09:00 PM BDT - 9:00 PM Feed & Water check
+  workflow_dispatch:
+    inputs:
+      force_slot:
+        description: 'Optional test slot (feed_water_1300, feed_water_1530, feed_water_2100, med_check, test_all)'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  send-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Dependencies
+        run: npm install --no-save --no-audit --no-fund web-push
+
+      - name: Send Scheduled Farm & Medicine Push Notifications
+        env:
+          VAPID_PUBLIC_KEY: ${{ secrets.VAPID_PUBLIC_KEY }}
+          VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
+          VAPID_SUBJECT: ${{ secrets.VAPID_SUBJECT }}
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          FIREBASE_DATABASE_SECRET: ${{ secrets.FIREBASE_DATABASE_SECRET }}
+          FIREBASE_DATABASE_URL: ${{ secrets.FIREBASE_DATABASE_URL }}
+          FORCE_SLOT: ${{ github.event.inputs.force_slot }}
+        run: node scripts/send-push-notifications.mjs

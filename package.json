@@ -1,0 +1,23 @@
+{
+  "name": "amarhisab-smartmanager",
+  "version": "1.0.0",
+  "description": "আমার খামার - স্মার্ট পোল্ট্রি খামার ম্যানেজমেন্ট",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "dev": "node server.js",
+    "build": "echo 'No build step required for static site'",
+    "lint": "echo 'No linting required for static site'",
+    "start": "node server.js",
+    "push:send": "node scripts/send-push-notifications.mjs",
+    "push:vapid": "web-push generate-vapid-keys"
+  },
+  "dependencies": {
+    "@google/genai": "^3.4.0",
+    "express": "^4.19.2",
+    "nodemailer": "^10.0.0",
+    "otplib": "^13.5.0",
+    "qrcode": "^1.5.4",
+    "web-push": "^4.0.0"
+  }
+}

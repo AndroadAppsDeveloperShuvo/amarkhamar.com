@@ -1,0 +1,522 @@
+import express from 'express';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import crypto from 'crypto';
+import fs from 'fs';
+import nodemailer from 'nodemailer';
+import { generateSecret, generateURI, verifySync } from 'otplib';
+import QRCode from 'qrcode';
+import { GoogleGenAI } from '@google/genai';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const app = express();
+const PORT = Number(process.env.PORT) || 3000;
+
+// CORS & Preflight Middleware
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept, X-Requested-With');
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(204);
+  }
+  next();
+});
+
+// Middleware
+app.use(express.json());
+
+// Block direct access to sensitive server & configuration files
+app.use((req, res, next) => {
+  const sensitiveFiles = ['.env', 'server.js', 'package.json', 'bun.lock', 'totp-secret.json'];
+  const reqPath = req.path.toLowerCase().replace(/^\/+/, '');
+  if (sensitiveFiles.some(f => reqPath === f || reqPath.startsWith(f + '/') || reqPath.includes('/' + f))) {
+    return res.status(403).json({ error: 'Access denied to sensitive file' });
+  }
+  next();
+});
+
+// Serve static files from the root directory with cache control for scripts
+app.use(express.static(__dirname, {
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('.js') || filePath.endsWith('.html') || filePath.endsWith('.json')) {
+      res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+    }
+  }
+}));
+
+// ==========================================
+// 🔐 SECURE ADMIN AUTH: GMAIL OTP + GOOGLE AUTHENTICATOR (TOTP)
+// ==========================================
+const AUTHORIZED_ADMIN_EMAIL = (process.env.ADMIN_EMAIL || 'pkmdshuvo48@gmail.com').trim().toLowerCase();
+const TOTP_SECRET_FILE = path.join(__dirname, 'totp-secret.json');
+
+function getAdminTotpSecret() {
+  if (process.env.ADMIN_TOTP_SECRET) {
+    return process.env.ADMIN_TOTP_SECRET.trim().replace(/\s+/g, '');
+  }
+  try {
+    if (fs.existsSync(TOTP_SECRET_FILE)) {
+      const data = JSON.parse(fs.readFileSync(TOTP_SECRET_FILE, 'utf8'));
+      if (data && data.secret) {
+        return data.secret;
+      }
+    }
+  } catch (err) {
+    console.error('Error reading totp-secret.json:', err);
+  }
+
+  const newSecret = generateSecret();
+  try {
+    fs.writeFileSync(TOTP_SECRET_FILE, JSON.stringify({
+      secret: newSecret,
+      email: AUTHORIZED_ADMIN_EMAIL,
+      createdAt: new Date().toISOString()
+    }, null, 2), 'utf8');
+  } catch (err) {
+    console.error('Error writing totp-secret.json:', err);
+  }
+  return newSecret;
+}
+
+// In-memory stores
+let currentAdminOtp = null; // { code: string, expiresAt: number, attempts: number, lastRequestedAt: number }
+const adminSessions = new Map(); // token -> { email: string, expiresAt: number }
+
+// Cleanup expired sessions periodically
+setInterval(() => {
+  const now = Date.now();
+  for (const [token, data] of adminSessions.entries()) {
+    if (data.expiresAt < now) {
+      adminSessions.delete(token);
+    }
+  }
+  if (currentAdminOtp && currentAdminOtp.expiresAt < now) {
+    currentAdminOtp = null;
+  }
+}, 60000);
+
+// Helper: Setup Nodemailer transporter with connection pool
+let cachedEmailTransporter = null;
+function getEmailTransporter() {
+  if (cachedEmailTransporter) {
+    return cachedEmailTransporter;
+  }
+  const user = (process.env.SMTP_USER || process.env.GMAIL_USER || process.env.ADMIN_EMAIL || '').trim();
+  const pass = (process.env.SMTP_PASS || process.env.GMAIL_PASS || process.env.GMAIL_APP_PASSWORD || '').replace(/\s+/g, '');
+
+  if (!user || !pass) {
+    return null;
+  }
+
+  cachedEmailTransporter = nodemailer.createTransport({
+    service: 'gmail',
+    pool: true,
+    maxConnections: 3,
+    auth: { user, pass }
+  });
+  return cachedEmailTransporter;
+}
+
+// 📩 1. Send OTP to Admin Email
+app.post('/api/admin/send-code', async (req, res) => {
+  try {
+    const { email } = req.body || {};
+    const normalizedEmail = (email || '').trim().toLowerCase();
+
+    if (normalizedEmail !== AUTHORIZED_ADMIN_EMAIL.toLowerCase()) {
+      return res.status(403).json({
+        success: false,
+        error: "অননুমোদিত ইমেইল! শুধুমাত্র অনুমোদিত এডমিন জিমেইল ঠিকানা দিয়ে কোড পাঠানো যাবে।"
+      });
+    }
+
+    const now = Date.now();
+
+    // Generate secure 6-digit OTP
+    const otp = crypto.randomInt(100000, 999999).toString();
+    const expiresAt = now + 10 * 60 * 1000; // 10 minutes
+
+    currentAdminOtp = {
+      code: otp,
+      expiresAt,
+      attempts: 0,
+      lastRequestedAt: now
+    };
+
+    console.log(`\n========================================`);
+    console.log(`🔐 [ADMIN OTP GENERATED]`);
+    console.log(`Target Email: ${AUTHORIZED_ADMIN_EMAIL}`);
+    console.log(`Verification Code: ${otp}`);
+    console.log(`Expires in: 10 minutes`);
+    console.log(`========================================\n`);
+
+    const transporter = getEmailTransporter();
+    let emailSent = false;
+    let emailErrorMsg = null;
+
+    if (transporter) {
+      try {
+        const fromAddress = process.env.SMTP_USER || process.env.GMAIL_USER || 'no-reply@amarhisab.app';
+        await transporter.sendMail({
+          from: `"আমার খামার সিকিউরিটি" <${fromAddress}>`,
+          to: AUTHORIZED_ADMIN_EMAIL,
+          subject: `🔐 [আমার খামার] এডমিন প্যানেল ভেরিফিকেশন কোড: ${otp}`,
+          text: `আপনার এডমিন প্যানেল ভেরিফিকেশন কোড হলো: ${otp}\nএই কোডটি পরবর্তী ১০ মিনিট কার্যকর থাকবে।\nকাউকে এই কোড শেয়ার করবেন না।`,
+          html: `
+            <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 25px; background: #ffffff; border: 1px solid #e0e0e0; border-radius: 16px;">
+              <div style="text-align: center; margin-bottom: 20px;">
+                <h2 style="color: #00796B; margin: 0;">🐔 আমার খামার</h2>
+                <p style="color: #666; font-size: 13px; margin-top: 4px;">স্মার্ট পোল্ট্রি খামার ম্যানেজমেন্ট</p>
+              </div>
+              <div style="background: #E0F2F1; border-radius: 12px; padding: 20px; text-align: center; margin-bottom: 20px;">
+                <p style="margin: 0 0 10px 0; color: #004D40; font-size: 14px; font-weight: bold;">আপনার এডমিন ভেরিফিকেশন কোড:</p>
+                <span style="font-size: 32px; font-weight: 800; letter-spacing: 6px; color: #00796B; background: #ffffff; padding: 10px 24px; border-radius: 8px; display: inline-block; border: 2px dashed #00796B;">${otp}</span>
+                <p style="margin: 12px 0 0 0; color: #666; font-size: 12px;">এই কোডটি আগামী <b>১০ মিনিট</b> কার্যকর থাকবে।</p>
+              </div>
+              <p style="color: #777; font-size: 12px; line-height: 1.5; margin: 0;">নিরাপত্তা সতর্কতা: আপনি যদি এই অনুরোধ না করে থাকেন, তবে এই ইমেইলটি উপেক্ষা করুন। কাউকে আপনার কোড জানাবেন না।</p>
+              <div style="border-top: 1px solid #eee; margin-top: 20px; padding-top: 15px; text-align: center; color: #999; font-size: 11px;">
+                © আমার খামার সিকিউরিটি গার্ড
+              </div>
+            </div>
+          `
+        });
+        emailSent = true;
+      } catch (mailErr) {
+        console.error('Failed to dispatch email via SMTP:', mailErr);
+        emailErrorMsg = mailErr.message;
+      }
+    }
+
+    if (emailSent) {
+      return res.json({
+        success: true,
+        message: "আপনার জিমেইলে ৬ ডিজিটের ভেরিফিকেশন কোড পাঠানো হয়েছে। ইনবক্স অথবা স্প্যাম ফোল্ডার চেক করুন।"
+      });
+    } else {
+      return res.status(500).json({
+        success: false,
+        error: `ইমেইল পাঠানো যায়নি (${emailErrorMsg || 'SMTP কানেকশন ত্রুটি'})। আপনার জিমেইল সেটিংস চেক করুন।`
+      });
+    }
+  } catch (err) {
+    console.error('Error in /api/admin/send-code:', err);
+    res.status(500).json({ success: false, error: 'সার্ভারে সমস্যা হয়েছে। অনুগ্রহ করে পুনরায় চেষ্টা করুন।' });
+  }
+});
+
+// 📲 2. Google Authenticator Setup Endpoint (QR Code + Secret Key)
+app.get('/api/admin/totp-setup', async (req, res) => {
+  try {
+    const secret = getAdminTotpSecret();
+    const otpauthUrl = generateURI({
+      secret,
+      label: AUTHORIZED_ADMIN_EMAIL,
+      issuer: 'Amar Khamar'
+    });
+
+    const qrCodeDataUrl = await QRCode.toDataURL(otpauthUrl, {
+      errorCorrectionLevel: 'M',
+      margin: 2,
+      width: 260
+    });
+
+    res.json({
+      success: true,
+      email: AUTHORIZED_ADMIN_EMAIL,
+      secret,
+      secretFormatted: secret.match(/.{1,4}/g).join(' '),
+      otpauthUrl,
+      qrCode: qrCodeDataUrl,
+      issuer: 'আমার খামার'
+    });
+  } catch (err) {
+    console.error('Error generating TOTP setup:', err);
+    res.status(500).json({ success: false, error: 'Google Authenticator সেটআপ তৈরি করতে সমস্যা হয়েছে।' });
+  }
+});
+
+// 🔑 3. Verify Code (Google Authenticator TOTP or Gmail OTP) & Issue Secure Session Token
+app.post('/api/admin/verify-code', (req, res) => {
+  try {
+    const { email, code } = req.body || {};
+    const normalizedEmail = (email || '').trim().toLowerCase();
+    const normalizedCode = (code || '').trim();
+
+    if (normalizedEmail && normalizedEmail !== AUTHORIZED_ADMIN_EMAIL.toLowerCase()) {
+      return res.status(403).json({ success: false, error: 'অননুমোদিত ইমেইল ঠিকানা!' });
+    }
+
+    if (!normalizedCode || normalizedCode.length !== 6) {
+      return res.status(400).json({ success: false, error: 'অনুগ্রহ করে ৬ ডিজিটের সম্পূর্ণ কোড লিখুন।' });
+    }
+
+    // A. Check Google Authenticator TOTP token
+    const totpSecret = getAdminTotpSecret();
+    let isTotpValid = false;
+    try {
+      const totpCheck = verifySync({
+        token: normalizedCode,
+        secret: totpSecret,
+        epochTolerance: 35
+      });
+      isTotpValid = !!(totpCheck && totpCheck.valid);
+    } catch (e) {
+      console.error('TOTP check exception:', e);
+    }
+
+    // B. Check Active Email OTP
+    let isEmailOtpValid = false;
+    if (currentAdminOtp && Date.now() <= currentAdminOtp.expiresAt) {
+      if (currentAdminOtp.code === normalizedCode) {
+        isEmailOtpValid = true;
+      }
+    }
+
+    if (!isTotpValid && !isEmailOtpValid) {
+      if (currentAdminOtp) {
+        currentAdminOtp.attempts = (currentAdminOtp.attempts || 0) + 1;
+        if (currentAdminOtp.attempts >= 5) {
+          currentAdminOtp = null;
+          return res.status(429).json({
+            success: false,
+            error: 'অতিরিক্ত ভুল চেষ্টার কারণে ইমেইল ওটিপি বাতিল করা হয়েছে। নতুন ওটিপি পাঠান অথবা Google Authenticator কোড ব্যবহার করুন।'
+          });
+        }
+      }
+      return res.status(400).json({
+        success: false,
+        error: 'ভুল কোড! আপনার Google Authenticator অ্যাপের চলতি ৬ ডিজিট কোড অথবা জিমেইলের ওটিপি কোডটি লিখুন।'
+      });
+    }
+
+    // Invalidate email OTP if it was verified
+    if (isEmailOtpValid) {
+      currentAdminOtp = null;
+    }
+
+    // Generate secure admin token (24 hours validity)
+    const token = crypto.randomBytes(32).toString('hex');
+    const sessionExpiresAt = Date.now() + 24 * 60 * 60 * 1000;
+
+    adminSessions.set(token, {
+      email: AUTHORIZED_ADMIN_EMAIL,
+      expiresAt: sessionExpiresAt,
+      authMethod: isTotpValid ? 'Google Authenticator' : 'Email OTP'
+    });
+
+    res.json({
+      success: true,
+      token,
+      expiresAt: sessionExpiresAt,
+      authMethod: isTotpValid ? 'Google Authenticator' : 'Email OTP',
+      message: isTotpValid 
+        ? 'Google Authenticator দিয়ে সফলভাবে যাচাই হয়েছে! এডমিন অ্যাক্সেস প্রদান করা হয়েছে।'
+        : 'জিমেইল ওটিপি দিয়ে সফলভাবে যাচাই হয়েছে! এডমিন অ্যাক্সেস প্রদান করা হয়েছে।'
+    });
+  } catch (err) {
+    console.error('Error in /api/admin/verify-code:', err);
+    res.status(500).json({ success: false, error: 'সার্ভারে সমস্যা হয়েছে।' });
+  }
+});
+
+// 🔍 3. Check Session Validity
+app.post('/api/admin/check-session', (req, res) => {
+  const authHeader = req.headers.authorization;
+  const token = (authHeader && authHeader.startsWith('Bearer ')) 
+    ? authHeader.slice(7) 
+    : (req.body && req.body.token);
+
+  if (!token) {
+    return res.json({ authenticated: false });
+  }
+
+  const session = adminSessions.get(token);
+  if (!session) {
+    return res.json({ authenticated: false });
+  }
+
+  if (Date.now() > session.expiresAt) {
+    adminSessions.delete(token);
+    return res.json({ authenticated: false, error: 'সেশনের মেয়াদ শেষ হয়েছে।' });
+  }
+
+  res.json({
+    authenticated: true,
+    expiresAt: session.expiresAt
+  });
+});
+
+// 🚪 4. Admin Logout
+app.post('/api/admin/logout', (req, res) => {
+  const authHeader = req.headers.authorization;
+  const token = (authHeader && authHeader.startsWith('Bearer ')) 
+    ? authHeader.slice(7) 
+    : (req.body && req.body.token);
+
+  if (token && adminSessions.has(token)) {
+    adminSessions.delete(token);
+  }
+  res.json({ success: true, message: 'লগআউট সফল হয়েছে।' });
+});
+
+// ==========================================
+// 🤖 PK CHAT BOT: PERSONAL POULTRY FARM ASSISTANT (GEMINI API)
+// ==========================================
+app.post('/api/pk-chat', async (req, res) => {
+  try {
+    const apiKey = (process.env.GEMINI_API_KEY || '').trim();
+    if (!apiKey) {
+      return res.status(503).json({
+        success: false,
+        error: 'সার্ভারে GEMINI_API_KEY কনফিগার করা নেই।'
+      });
+    }
+
+    const { message, history, farmContext } = req.body || {};
+    const cleanMessage = typeof message === 'string' ? message.trim() : '';
+
+    if (!cleanMessage) {
+      return res.status(400).json({
+        success: false,
+        error: 'অনুগ্রহ করে একটি প্রশ্ন বা বার্তা লিখুন।'
+      });
+    }
+
+    if (cleanMessage.length > 1500) {
+      return res.status(400).json({
+        success: false,
+        error: 'বার্তাটি অনেক বড়। অনুগ্রহ করে সংক্ষেপে লিখুন।'
+      });
+    }
+
+    const ai = new GoogleGenAI({
+      apiKey,
+      httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
+    });
+
+    const safeContext = (farmContext && typeof farmContext === 'object') ? farmContext : {};
+    const contextJson = JSON.stringify(safeContext, null, 2).slice(0, 12000);
+
+    const systemInstruction = `তুমি "PK Chat Bot" — 'আমার খামার - স্মার্ট ম্যানেজার' অ্যাপের প্রতিটি ইউজারের পার্সোনাল পোল্ট্রি খামার ও ঔষধ অ্যাসিস্ট্যান্ট।
+তোমার প্রধান দক্ষতা ও কাজ:
+১. ভাষা ও আঞ্চলিক বোঝাপড়া: ইউজার যদি বাংলাদেশের যেকোনো আঞ্চলিক বা লোকাল ভাষায় (যেমন নোয়াখালী, চট্টগ্রাম, সিলেট, বরিশাল, রংপুর, ময়মনসিংহ, কুমিল্লা, ঢাকার কথ্য ভাষা), কথ্য/অশুদ্ধ বানানে অথবা ইংরেজি অক্ষরে বাংলা (Banglish — যেমন "aj ki oshud baki", "morog morche", "lav koto", "daktar lagbe") লেখে — তবুও তুমি কথার মূল অর্থ পুরোপুরি বুঝবে এবং সহজ, আন্তরিক, প্রাঞ্জল বাংলায় উত্তর দেবে।
+২. আঞ্চলিক শব্দের উদাহরণ: "দোয়াই/অষুদ/ওসুদ" = ঔষধ, "মরগ/পোল্ট্রি/বাচ্চা" = মুরগি, "দানা/খাওন" = খাবার/ফিড, "টেকা/পয়সা" = টাকা, "আইজ/আইজকা/কিতা/কেমনে/কয়ডা" ইত্যাদি সব স্থানীয় রূপ স্বাভাবিকভাবে বুঝবে।
+৩. প্রতিদিনের ঔষধ মনিটরিং: ইউজার প্রতিদিন সময়মতো ঔষধ দিচ্ছে কিনা এবং অ্যাপে টিক (মার্ক) দিচ্ছে কিনা তা FARM CONTEXT থেকে পর্যবেক্ষণ করে স্পষ্ট জানাবে। বাকি ঔষধ থাকলে নাম, দিন, সময় (সকাল/দুপুর/রাত/সারাদিন) ও মাত্রা বলবে।
+৪. সত্যতা ও সীমাবদ্ধতা: FARM CONTEXT-এ থাকা চালান, বয়স, ঔষধ, টিক-মার্ক, স্টক, বাকির খাতা ও লাভ-ক্ষতির তথ্যের ভিত্তিতেই উত্তর দেবে; কোনো কাল্পনিক তথ্য বা বানানো সংখ্যা দেবে না।
+৫. যোগাযোগ সংক্রান্ত নিয়ম:
+   - যদি কেউ অ্যাপের ডেভেলপার বা এডমিনের নম্বর বা যোগাযোগ চায়, তবে কোনো ব্যক্তিগত ফোন নম্বর বা ইমেইল অনুমান করবে না — শুধু বলবে: "ডেভেলপার / এডমিনের সাথে যোগাযোগ করতে স্ক্রিনে খোলা পপ-আপের 'আমার সাথে যোগাযোগ করুন' বাটনে ট্যাপ করুন: https://shuvopkofficial.github.io/biodata.com/"
+   - যদি কেউ পোল্ট্রি ডাক্তার, ভেটেরিনারি চিকিৎসক, মুরগির অসুস্থতা বা অভিজ্ঞ পরামর্শকের যোগাযোগ চায়, তবে অবশ্যই জানাবে: "একজন পরামর্শক বা ডাক্তারের সাথে যোগাযোগ করুন: +8801719460996"
+
+LIVE FARM CONTEXT (JSON):
+${contextJson}`;
+
+    const contents = [];
+    if (Array.isArray(history)) {
+      const recentHistory = history.slice(-10);
+      for (const item of recentHistory) {
+        if (item && typeof item.text === 'string' && item.text.trim()) {
+          const role = item.role === 'model' ? 'model' : 'user';
+          contents.push({
+            role,
+            parts: [{ text: item.text.trim().slice(0, 1500) }]
+          });
+        }
+      }
+    }
+
+    contents.push({
+      role: 'user',
+      parts: [{ text: cleanMessage }]
+    });
+
+    const generationConfig = {
+      systemInstruction,
+      temperature: 0.35,
+      maxOutputTokens: 1024
+    };
+
+    let activeModel = 'gemini-4-hydrogen';
+    let response;
+    try {
+      response = await ai.models.generateContent({
+        model: activeModel,
+        contents,
+        config: generationConfig
+      });
+    } catch (primaryErr) {
+      const msgStr = String(primaryErr && primaryErr.message ? primaryErr.message : '');
+      const isTransient = (primaryErr && primaryErr.status === 503) || msgStr.includes('503') || msgStr.includes('UNAVAILABLE');
+      if (isTransient) {
+        activeModel = 'gemini-3.1-flash-lite';
+        response = await ai.models.generateContent({
+          model: activeModel,
+          contents,
+          config: generationConfig
+        });
+      } else {
+        throw primaryErr;
+      }
+    }
+
+    const replyText = (response && response.text) ? response.text.trim() : '';
+    if (!replyText) {
+      return res.status(502).json({
+        success: false,
+        error: 'মডেল থেকে উত্তর পাওয়া যায়নি। অনুগ্রহ করে আবার চেষ্টা করুন।'
+      });
+    }
+
+    res.json({
+      success: true,
+      reply: replyText,
+      model: activeModel
+    });
+  } catch (err) {
+    console.error('Error in /api/pk-chat:', err);
+    let status = (err && typeof err.status === 'number' && err.status >= 400 && err.status < 600)
+      ? err.status
+      : 500;
+    let errorMsg = (err && err.message) ? err.message : 'PK Chat Bot সার্ভারে সমস্যা হয়েছে।';
+    try {
+      const parsed = JSON.parse(errorMsg);
+      if (parsed && parsed.error) {
+        if (typeof parsed.error.code === 'number' && parsed.error.code >= 400 && parsed.error.code < 600) {
+          status = parsed.error.code;
+        }
+        if (parsed.error.message) {
+          errorMsg = parsed.error.message;
+        }
+      }
+    } catch (_) {}
+    res.status(status).json({
+      success: false,
+      error: errorMsg
+    });
+  }
+});
+
+// Serve index.html for the root route
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'index.html'));
+});
+
+// Serve public VAPID key for local Web Push testing (never exposes private key)
+app.get('/api/push-config', (req, res) => {
+  res.json({
+    vapidPublicKey: (process.env.VAPID_PUBLIC_KEY || '').trim()
+  });
+});
+
+// Serve health check
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok' });
+});
+
+// Run server
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Server running on port ${PORT}`);
+});
+
