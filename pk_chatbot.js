@@ -4,7 +4,7 @@
 */
 
 (function () {
-    const PK_CHATBOT_VERSION = 41;
+    const PK_CHATBOT_VERSION = 44;
     const PK_DEVELOPER_BIODATA_URL = 'https://shuvopkofficial.github.io/biodata.com/';
     const DEFAULT_DOCTOR_CONFIG = {
         enabled: true,

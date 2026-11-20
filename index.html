@@ -173,6 +173,23 @@
                             <div id="theme-knob" class="w-4 h-4 bg-white rounded-full absolute top-1 left-1 transition-all dark:left-7 shadow-sm"></div>
                         </button>
                     </div>
+                    <div onclick="openWeatherLocationModal()" class="flex items-center justify-between gap-2 p-4 border-t border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/60 transition cursor-pointer">
+                        <div class="flex items-center gap-3 min-w-0">
+                            <span class="material-symbols-outlined text-teal-600 dark:text-teal-400 flex-shrink-0">location_on</span>
+                            <div class="min-w-0">
+                                <span class="block font-medium text-sm dark:text-gray-200">আবহাওয়ার এলাকা</span>
+                                <span id="weather-area-status" class="block text-[11px] text-gray-500 dark:text-gray-400 truncate">অটো লোকেশন</span>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-1.5 flex-shrink-0">
+                            <button type="button" onclick="event.stopPropagation(); openWeatherLocationModal()" class="px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-xs font-bold text-gray-700 dark:text-gray-200 transition">
+                                এলাকা বাছাই
+                            </button>
+                            <button id="weather-gps-btn" type="button" onclick="event.stopPropagation(); detectGpsWeatherLocation()" title="বর্তমান জিপিএস লোকেশন নিন" class="w-8 h-8 rounded-lg bg-teal-50 dark:bg-teal-900/40 text-teal-700 dark:text-teal-300 border border-teal-200/70 dark:border-teal-700 flex items-center justify-center hover:bg-teal-100 dark:hover:bg-teal-900/70 active:scale-95 transition">
+                                <span class="material-symbols-outlined text-[18px]">my_location</span>
+                            </button>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- 🔔 ফোন নোটিফিকেশন ও অ্যাপ ইন্সটল (Android + iPhone Home Screen) -->
@@ -526,6 +543,39 @@
             <button type="button" onclick="closeIosInstallGuide()" class="w-full min-h-[44px] py-2.5 rounded-xl bg-teal-700 hover:bg-teal-800 text-white font-bold text-sm transition">
                 বুঝেছি
             </button>
+        </div>
+    </div>
+
+    <!-- 📍 গ্রাম, উপজেলা ও জেলা ভিত্তিক আবহাওয়ার এলাকা নির্বাচন Modal -->
+    <div id="weather-location-modal" class="hidden fixed inset-0 z-[77] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-[fadeIn_0.2s_ease-out]" onclick="if(event.target===this) closeWeatherLocationModal()">
+        <div class="bg-white dark:bg-gray-800 w-full max-w-md rounded-3xl p-5 shadow-2xl border border-gray-100 dark:border-gray-700 space-y-3">
+            <div class="flex items-center justify-between pb-2 border-b border-gray-100 dark:border-gray-700">
+                <div class="flex items-center gap-2">
+                    <span class="material-symbols-outlined text-teal-600 dark:text-teal-400">location_on</span>
+                    <h3 class="text-base font-bold text-gray-900 dark:text-white">স্থান নির্বাচন করুন</h3>
+                </div>
+                <button type="button" onclick="closeWeatherLocationModal()" class="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 rounded-full transition">
+                    <span class="material-symbols-outlined text-lg">close</span>
+                </button>
+            </div>
+
+            <div class="grid grid-cols-2 gap-2">
+                <button id="weather-modal-gps-btn" type="button" onclick="detectGpsWeatherLocation(true)" class="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-teal-50 dark:bg-teal-900/30 hover:bg-teal-100 dark:hover:bg-teal-900/50 text-teal-700 dark:text-teal-300 text-xs font-bold transition">
+                    <span class="material-symbols-outlined text-base">my_location</span>
+                    <span>বর্তমান GPS অবস্থান</span>
+                </button>
+                <button type="button" onclick="selectAutoWeatherLocation()" class="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 text-xs font-bold transition">
+                    <span class="material-symbols-outlined text-base">public</span>
+                    <span>অটো (স্বয়ংক্রিয়)</span>
+                </button>
+            </div>
+
+            <div class="relative">
+                <span class="material-symbols-outlined absolute left-3 top-2.5 text-gray-400 text-[18px]">search</span>
+                <input id="weather-location-search" type="text" oninput="onWeatherLocationSearchInput(this.value)" placeholder="গ্রাম, বাজার, উপজেলা বা জেলা খুঁজুন..." class="w-full pl-9 pr-3 py-2.5 rounded-xl bg-gray-50 dark:bg-gray-700/70 border border-gray-200 dark:border-gray-600 text-xs text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-teal-500">
+            </div>
+
+            <div id="weather-location-results" class="max-h-64 overflow-y-auto space-y-1.5 pr-1"></div>
         </div>
     </div>
     <div id="toast" class="hidden fixed bottom-20 left-1/2 -translate-x-1/2 bg-gray-800 text-white px-5 py-2 rounded-full text-sm z-50 shadow-lg"></div>
@@ -1314,17 +1364,17 @@
 
         navigateToTab('dashboard');
     </script>
-    <script src="notifications.js?v=41"></script>
+    <script src="notifications.js?v=44"></script>
     <script src="stock.js"></script>
     <script src="daily_report.js"></script>
-    <script src="medicine.js?v=41"></script>
-    <script src="pk_chatbot.js?v=41"></script>
-    <script src="push_notifications.js?v=41"></script>
+    <script src="medicine.js?v=44"></script>
+    <script src="pk_chatbot.js?v=44"></script>
+    <script src="push_notifications.js?v=44"></script>
     
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-                navigator.serviceWorker.register('sw.js?v=41').then(reg => {
+                navigator.serviceWorker.register('sw.js?v=44').then(reg => {
                     reg.update();
                 }).catch(e => console.warn('SW registration warning:', e));
             });

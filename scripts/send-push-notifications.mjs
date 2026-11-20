@@ -186,6 +186,275 @@ function determineActiveSlots(dhaka) {
   return slots;
 }
 
+const DEFAULT_LOCATION = { lat: 23.8103, lon: 90.4125, city: 'Bangladesh' };
+const weatherCache = new Map();
+
+function extractOpenMeteoEnsembleRain(hourly, dhaka) {
+  if (!hourly || typeof hourly !== 'object') return { next3hRainProb: 0, modelsRain: 0 };
+  const times = Array.isArray(hourly.time) ? hourly.time : [];
+  const models = ['ecmwf_ifs025', 'gfs_seamless', 'icon_seamless', 'jma_seamless'];
+
+  let maxProb = 0;
+  let maxModelsRain = 0;
+
+  for (let i = 0; i < times.length; i++) {
+    const t = times[i];
+    if (typeof t !== 'string' || !t.startsWith(`${dhaka.todayKey}T`)) continue;
+    const hr = parseInt(t.slice(11, 13), 10);
+    if (!Number.isFinite(hr) || hr < dhaka.hour || hr > Math.min(23, dhaka.hour + 3)) continue;
+
+    const bmProb = Array.isArray(hourly.precipitation_probability_best_match)
+      ? Number(hourly.precipitation_probability_best_match[i]) || 0
+      : (Array.isArray(hourly.precipitation_probability) ? Number(hourly.precipitation_probability[i]) || 0 : 0);
+    if (bmProb > maxProb) maxProb = bmProb;
+
+    let rainVotes = 0;
+    let modelProbsSum = 0;
+    let modelProbsCount = 0;
+    for (const m of models) {
+      const pArr = hourly[`precipitation_probability_${m}`];
+      const rArr = hourly[`precipitation_${m}`];
+      const pVal = Array.isArray(pArr) && typeof pArr[i] === 'number' ? pArr[i] : null;
+      const rVal = Array.isArray(rArr) && typeof rArr[i] === 'number' ? rArr[i] : 0;
+      if (pVal !== null) {
+        modelProbsSum += pVal;
+        modelProbsCount++;
+      }
+      if ((pVal !== null && pVal >= 60) || rVal >= 0.2) {
+        rainVotes++;
+      }
+    }
+    if (modelProbsCount > 0) {
+      const avgModelProb = Math.round(modelProbsSum / modelProbsCount);
+      if (avgModelProb > maxProb) maxProb = avgModelProb;
+    }
+    if (rainVotes > maxModelsRain) maxModelsRain = rainVotes;
+  }
+
+  return { next3hRainProb: maxProb, modelsRain: maxModelsRain };
+}
+
+async function fetchDirectOpenMeteo(safeLat, safeLon, dhaka, multiModel) {
+  const modelsParam = multiModel
+    ? '&models=best_match,ecmwf_ifs025,gfs_seamless,icon_seamless,jma_seamless'
+    : '';
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${encodeURIComponent(safeLat.toFixed(4))}&longitude=${encodeURIComponent(safeLon.toFixed(4))}&current=temperature_2m,apparent_temperature,relative_humidity_2m,precipitation,rain,weather_code,wind_speed_10m,wind_gusts_10m&hourly=precipitation_probability,precipitation${modelsParam}&forecast_days=1&timezone=Asia%2FDhaka`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 7000);
+  try {
+    const res = await fetch(url, { signal: controller.signal });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const cur = data && data.current;
+    if (!cur || typeof cur.temperature_2m !== 'number') return null;
+
+    const { next3hRainProb, modelsRain } = extractOpenMeteoEnsembleRain(data.hourly, dhaka);
+
+    return {
+      source: multiModel ? 'open-meteo-ensemble' : 'open-meteo',
+      temp: Number(cur.temperature_2m),
+      apparent: typeof cur.apparent_temperature === 'number' ? Number(cur.apparent_temperature) : Number(cur.temperature_2m),
+      humidity: typeof cur.relative_humidity_2m === 'number' ? Number(cur.relative_humidity_2m) : 0,
+      rain: typeof cur.rain === 'number' ? Number(cur.rain) : 0,
+      precipitation: typeof cur.precipitation === 'number' ? Number(cur.precipitation) : 0,
+      weatherCode: typeof cur.weather_code === 'number' ? Number(cur.weather_code) : 0,
+      windSpeed: typeof cur.wind_speed_10m === 'number' ? Number(cur.wind_speed_10m) : 0,
+      windGusts: typeof cur.wind_gusts_10m === 'number' ? Number(cur.wind_gusts_10m) : 0,
+      next3hRainProb,
+      modelsRain
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function fetchLiveWeather(lat, lon) {
+  const safeLat = Number.isFinite(Number(lat)) ? Number(lat) : DEFAULT_LOCATION.lat;
+  const safeLon = Number.isFinite(Number(lon)) ? Number(lon) : DEFAULT_LOCATION.lon;
+  const cacheKey = `${safeLat.toFixed(2)},${safeLon.toFixed(2)}`;
+  if (weatherCache.has(cacheKey)) return weatherCache.get(cacheKey);
+
+  const dhaka = getDhakaTimeParts();
+
+  try {
+    const ensemble = await fetchDirectOpenMeteo(safeLat, safeLon, dhaka, true);
+    if (ensemble) {
+      weatherCache.set(cacheKey, ensemble);
+      return ensemble;
+    }
+  } catch (err) {
+    console.warn(`Open-Meteo ensemble warning (${cacheKey}):`, err.message);
+  }
+
+  try {
+    const fallback = await fetchDirectOpenMeteo(safeLat, safeLon, dhaka, false);
+    weatherCache.set(cacheKey, fallback);
+    return fallback;
+  } catch (err) {
+    console.warn(`Open-Meteo fallback warning (${cacheKey}):`, err.message);
+    weatherCache.set(cacheKey, null);
+    return null;
+  }
+}
+
+function buildWeatherAwareCarePayload(medSlot, weather, primaryShipment, cityLabel) {
+  const areaPrefix = (cityLabel && cityLabel !== 'Bangladesh' && cityLabel !== 'অটো লোকেশন')
+    ? `${cityLabel}: `
+    : '';
+
+  if (!weather) {
+    if (medSlot === 'med_morning') {
+      return {
+        title: '☀️ সুপ্রভাত ও সকালের যত্ন',
+        body: 'পানির পাত্রগুলো পরিষ্কার করে সকালের খাবার ও ঔষধ ঠিকমতো দিন।'
+      };
+    }
+    if (medSlot === 'med_noon') {
+      return {
+        title: '🌤️ দুপুরের শেড ও যত্ন চেক',
+        body: 'শেডের আবহাওয়া ও তাপমাত্রা দেখে পর্দা, বাতাস চলাচল ও পরিষ্কার পানির ব্যবস্থা নিশ্চিত করুন।'
+      };
+    }
+    if (medSlot === 'med_night') {
+      return {
+        title: '⛅ বিকালের যত্ন ও রাতের ঔষধ চেক',
+        body: 'লিটার (বিছানা) শুকনো আছে কি না দেখে নিন এবং রাতের ঔষধের সময় হলে টিক দিন।'
+      };
+    }
+    return {
+      title: '💊 ঔষধ ও দৈনিক যত্নের রিমাইন্ডার',
+      body: primaryShipment
+        ? `"${primaryShipment.name}" (দিন ${toBnDigits(primaryShipment.ageDays)}): এই মুহূর্তে বাকি ঔষধ নেই; আবহাওয়া ও শেডের অবস্থা দেখে নিন।`
+        : 'চালান যোগ থাকলে প্রতিদিন সকাল, দুপুর ও বিকালে আবহাওয়া ও ঔষধের রিমাইন্ডার পাবেন।'
+    };
+  }
+
+  const tempBn = toBnDigits(Math.round(weather.temp));
+  const appBn = toBnDigits(Math.round(weather.apparent));
+  const humBn = toBnDigits(Math.round(weather.humidity));
+  const windBn = toBnDigits(Math.round(Math.max(weather.windSpeed || 0, weather.windGusts || 0)));
+  const probBn = toBnDigits(Math.round(weather.next3hRainProb));
+
+  const isStorm = weather.weatherCode >= 95 || weather.windSpeed >= 30 || (weather.windGusts || 0) >= 42;
+  const isRaining = weather.rain >= 0.15 || weather.precipitation >= 0.15 || weather.weatherCode >= 51;
+  const isRainLikely = !isRaining && (weather.next3hRainProb >= 70 || (weather.modelsRain || 0) >= 3);
+  const isHot = !isRaining && (weather.temp >= 32 || weather.apparent >= 35);
+  const isCold = weather.temp <= 20;
+  const isWarm = !isRaining && !isHot && weather.temp >= 29;
+
+  if (isStorm) {
+    return {
+      title: `⛈️ ঝড়-বৃষ্টির সতর্কতা (${tempBn}° সে.)`,
+      body: `${areaPrefix}বাইরে ঝড়-বৃষ্টি হচ্ছে (দমকা বাতাস ${windBn} কিমি/ঘণ্টা)। শেডের পর্দা শক্ত করে নামিয়ে দিন এবং বৃষ্টির ছাট ও ঠান্ডা বাতাস থেকে মুরগি বাঁচান।`
+    };
+  }
+  if (isRaining) {
+    return {
+      title: `🌧️ বৃষ্টির আবহাওয়া সতর্কতা (${tempBn}° সে.)`,
+      body: `${areaPrefix}এখন বৃষ্টি হচ্ছে (আর্দ্রতা ${humBn}%)। শেডের পর্দা নামিয়ে দিন, লিটার (বিছানা) শুকনো রাখুন এবং ঠান্ডা লাগা থেকে বাচ্চা বাঁচান।`
+    };
+  }
+  if (isRainLikely) {
+    return {
+      title: `🌦️ বৃষ্টির সম্ভাবনা (${probBn}%, ${tempBn}° সে.)`,
+      body: `${areaPrefix}শীঘ্রই বৃষ্টি হতে পারে। শেডের পর্দা ও চালের ছিদ্র আগে থেকেই চেক করে প্রস্তুত রাখুন যেন লিটার না ভেজে।`
+    };
+  }
+  if (isHot) {
+    return {
+      title: `🔥 অতিরিক্ত গরমের সতর্কতা (${tempBn}° সে.)`,
+      body: `${areaPrefix}তাপমাত্রা বেশি (অনুভূত ${appBn}° সে.)! শেডে ফ্যান/স্প্রে চালু রাখুন এবং পানিতে ভিটামিন-সি বা ইলেক্ট্রোলাইট স্যালাইন দিন।`
+    };
+  }
+  if (isCold) {
+    return {
+      title: `❄️ ঠান্ডা আবহাওয়ার সতর্কতা (${tempBn}° সে.)`,
+      body: `${areaPrefix}তাপমাত্রা কম (${tempBn}° সে.)। শেডের পর্দা ভালোভাবে ঢেকে দিন, ঠান্ডা বাতাস আটকান এবং ছোট বাচ্চাদের ব্রুডিং তাপমাত্রা চেক করুন।`
+    };
+  }
+  if (isWarm) {
+    return {
+      title: `☀️ গরম ও বাতাস চলাচল চেক (${tempBn}° সে.)`,
+      body: `${areaPrefix}আবহাওয়া কিছুটা গরম (আর্দ্রতা ${humBn}%)। শেডে পর্যাপ্ত বাতাস চলাচল ও ঠান্ডা পরিষ্কার পানির ব্যবস্থা নিশ্চিত করুন।`
+    };
+  }
+
+  // স্বাভাবিক আরামদায়ক আবহাওয়া (২১°–২৮° সে., বৃষ্টি নেই)
+  if (medSlot === 'med_morning') {
+    return {
+      title: `☀️ সুপ্রভাত ও সকালের যত্ন (${tempBn}° সে.)`,
+      body: `${areaPrefix}আবহাওয়া ভালো আছে (${tempBn}° সে.)। পানির পাত্র পরিষ্কার করে সকালের খাবার ও ঔষধ ঠিকমতো দিন।`
+    };
+  }
+  if (medSlot === 'med_noon') {
+    return {
+      title: `🌤️ দুপুরের শেড ও যত্ন চেক (${tempBn}° সে.)`,
+      body: `${areaPrefix}আবহাওয়া স্বাভাবিক আছে (${tempBn}° সে., আর্দ্রতা ${humBn}%)। শেডের বাতাস চলাচল, পরিষ্কার পানি ও লিটারের অবস্থা দেখে নিন।`
+    };
+  }
+  if (medSlot === 'med_night') {
+    return {
+      title: `⛅ বিকালের যত্ন ও রাতের প্রস্তুতি (${tempBn}° সে.)`,
+      body: `${areaPrefix}আবহাওয়া স্বাভাবিক (${tempBn}° সে.)। লিটার শুকনো আছে কি না দেখুন এবং রাতের ঔষধের সময় হলে টিক দিন।`
+    };
+  }
+  return {
+    title: `🌤️ খামার ও আবহাওয়া আপডেট (${tempBn}° সে.)`,
+    body: primaryShipment
+      ? `"${primaryShipment.name}" (দিন ${toBnDigits(primaryShipment.ageDays)}): ${areaPrefix}আবহাওয়া স্বাভাবিক (${tempBn}° সে., আর্দ্রতা ${humBn}%) ও এই মুহূর্তে বাকি ঔষধ নেই।`
+      : `${areaPrefix}বর্তমান আবহাওয়া স্বাভাবিক (${tempBn}° সে., আর্দ্রতা ${humBn}%)। শেডের বাতাস ও পরিষ্কার পানি চেক করুন।`
+  };
+}
+
+async function deduplicateUserSubscriptions(db, uid, rawSubsEntries) {
+  // Sort newest first
+  const sorted = [...rawSubsEntries].sort((a, b) => (Number(b[1].updatedAt) || 0) - (Number(a[1].updatedAt) || 0));
+  const kept = [];
+  const toDelete = [];
+  const seenEndpoints = new Set();
+  const seenDeviceIds = new Set();
+  const platformsWithModernSub = new Set();
+
+  for (const [, sub] of sorted) {
+    if (sub && sub.deviceId && sub.platform) {
+      platformsWithModernSub.add(sub.platform);
+    }
+  }
+
+  for (const entry of sorted) {
+    const [subId, sub] = entry;
+    if (!sub || !sub.endpoint) continue;
+
+    // Duplicate endpoint
+    if (seenEndpoints.has(sub.endpoint)) {
+      toDelete.push(subId);
+      continue;
+    }
+
+    // Duplicate deviceId -> keep only newest
+    if (sub.deviceId) {
+      if (seenDeviceIds.has(sub.deviceId)) {
+        toDelete.push(subId);
+        continue;
+      }
+      seenDeviceIds.add(sub.deviceId);
+    } else if (sub.platform && platformsWithModernSub.has(sub.platform)) {
+      // Legacy subscription (pre-deviceId, e.g. old repo/old install) on same platform -> prune to stop duplicates
+      toDelete.push(subId);
+      continue;
+    }
+
+    seenEndpoints.add(sub.endpoint);
+    kept.push(entry);
+  }
+
+  for (const staleId of toDelete) {
+    await db.del(`users/${uid}/push_subscriptions/${staleId}`).catch(() => {});
+  }
+
+  return { kept, prunedCount: toDelete.length };
+}
+
 async function run() {
   if (!VAPID_PUBLIC_KEY || !VAPID_PRIVATE_KEY) {
     console.log('VAPID_PUBLIC_KEY or VAPID_PRIVATE_KEY is not configured in GitHub Secrets yet. Skipping push run.');
@@ -235,11 +504,18 @@ async function run() {
 
   for (const [uid, userObj] of Object.entries(usersData)) {
     if (!userObj || !userObj.push_subscriptions) continue;
-    const subsEntries = Object.entries(userObj.push_subscriptions).filter(([, s]) => s && s.endpoint);
+    const rawSubsEntries = Object.entries(userObj.push_subscriptions).filter(([, s]) => s && s.endpoint);
+    if (rawSubsEntries.length === 0) continue;
+
+    const { kept: subsEntries, prunedCount } = await deduplicateUserSubscriptions(db, uid, rawSubsEntries);
+    totalRemoved += prunedCount;
     if (subsEntries.length === 0) continue;
 
     const sentLog = userObj.push_sent_log || {};
     const messagesToSend = [];
+
+    // Resolve user's location for live weather-aware notifications
+    const userLoc = userObj.weather_location || subsEntries.find(([, s]) => s.location && s.location.lat)?.[1]?.location || DEFAULT_LOCATION;
 
     // 1. Feed & Water reminders (1:00 PM, 3:30 PM, 9:00 PM BDT)
     if (activeSlots.includes('feed_water_1300')) {
@@ -287,7 +563,7 @@ async function run() {
       }
     }
 
-    // 2. Active shipment medicine & regular farm care reminders
+    // 2. Active shipment medicine & live weather-aware farm care reminders
     const primaryShipment = computePrimaryShipmentAgeDays(userObj.shipments, dhaka.todayKey);
     const medSlot = activeSlots.find(s => s.startsWith('med_'));
     if (medSlot) {
@@ -336,27 +612,13 @@ async function run() {
         }
 
         if (!medPushed) {
-          let careTitle = '☀️ সুপ্রভাত ও সকালের ঔষধ চেক';
-          let careBody = 'পানির পাত্রগুলো পরিষ্কার করেছেন কি? সকালের খাবার ও ঔষধ ঠিকমতো দিন।';
-
-          if (medSlot === 'med_noon') {
-            careTitle = '🔥 দুপুরের তাপমাত্রা ও স্যালাইন সতর্কতা';
-            careBody = 'শেডের তাপমাত্রা চেক করুন। গরম বেশি থাকলে পানিতে ভিটামিন-সি বা স্যালাইন দিন।';
-          } else if (medSlot === 'med_night') {
-            careTitle = '⛅ বিকালের যত্ন ও রাতের ঔষধ চেক';
-            careBody = 'লিটার (বিছানা) শুকনো আছে কি না দেখে নিন এবং রাতের ঔষধের সময় হলে টিক দিন।';
-          } else if (medSlot === 'med_check') {
-            careTitle = '💊 ঔষধ ও দৈনিক যত্নের রিমাইন্ডার';
-            careBody = primaryShipment
-              ? `"${primaryShipment.name}" (দিন ${toBnDigits(primaryShipment.ageDays)}): এই মুহূর্তে বাকি ঔষধ নেই; প্রতিদিন সকাল, দুপুর ও বিকালে অটো রিমাইন্ডার পাবেন।`
-              : 'চালান যোগ থাকলে প্রতিদিন সকাল ৬টা, দুপুর ১২টা ও বিকাল ৪টায় স্বয়ংক্রিয় ঔষধের নোটিফিকেশন পাবেন।';
-          }
-
+          const liveWeather = await fetchLiveWeather(userLoc.lat, userLoc.lon, userLoc.city);
+          const care = buildWeatherAwareCarePayload(medSlot, liveWeather, primaryShipment, userLoc.city);
           messagesToSend.push({
             logKey: medLogKey,
             payload: {
-              title: careTitle,
-              body: careBody,
+              title: care.title,
+              body: care.body,
               tag: `${medSlot}_${dhaka.todayKey}`,
               action: 'medicine'
             }
@@ -418,7 +680,7 @@ async function run() {
     }
   }
 
-  console.log(`Push run complete. Sent: ${totalSent}, Expired removed: ${totalRemoved}`);
+  console.log(`Push run complete. Sent: ${totalSent}, Expired/duplicate removed: ${totalRemoved}`);
 }
 
 run().catch(err => {
