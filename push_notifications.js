@@ -637,6 +637,19 @@
             payload.location = location;
         }
 
+        // একই ডিভাইসে আগের কোনো অন্য একাউন্টে লগইন থাকলে সেই পুরনো সাবস্ক্রিপশন সরানো (ডাবল মেসেজ বন্ধ)
+        try {
+            const prevUid = localStorage.getItem('pk_last_push_uid');
+            if (prevUid && prevUid !== uid) {
+                db.ref(`users/${prevUid}/push_subscriptions/${subId}`).remove().catch(() => {});
+                const prevSubId = localStorage.getItem(`pk_push_sub_id_${prevUid}`);
+                if (prevSubId && prevSubId !== subId) {
+                    db.ref(`users/${prevUid}/push_subscriptions/${prevSubId}`).remove().catch(() => {});
+                }
+            }
+            localStorage.setItem('pk_last_push_uid', uid);
+        } catch (_) {}
+
         // একই ডিভাইসের পুরনো ডুপ্লিকেট বা পুরনো অ্যাপ-লিংকের সাবস্ক্রিপশন অটো পরিষ্কার করা
         try {
             const existingSnap = await db.ref(`users/${uid}/push_subscriptions`).once('value');

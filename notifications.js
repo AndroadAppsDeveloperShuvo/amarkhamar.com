@@ -208,12 +208,19 @@ function buildWeatherNotifCards(w) {
     const probBn = notifToBnDigits(Math.round(w.next3hRainProb));
     const areaPrefix = (w.city && w.city !== 'Bangladesh' && w.city !== 'অটো লোকেশন') ? `${w.city}: ` : '';
 
+    const hour = new Date().getHours();
+    const isNight = hour >= 18 || hour < 5;
+
     const isStorm = w.weatherCode >= 95 || w.windSpeed >= 30 || (w.windGusts || 0) >= 42;
-    const isRaining = w.rain >= 0.15 || w.precipitation >= 0.15 || w.weatherCode >= 51;
-    const isRainLikely = !isRaining && (w.next3hRainProb >= 70 || (w.modelsRain || 0) >= 3);
+    const isRaining = w.rain >= 0.1 || w.precipitation >= 0.1 || (w.weatherCode >= 51 && w.weatherCode <= 86);
+    const isDrizzle = isRaining && w.rain < 0.5 && w.weatherCode >= 51 && w.weatherCode <= 55;
+    const isRainLikely = !isRaining && (w.next3hRainProb >= 65 || (w.modelsRain || 0) >= 3);
+    const isFog = !isRaining && (w.weatherCode === 45 || w.weatherCode === 48);
     const isHot = !isRaining && (w.temp >= 32 || w.apparent >= 35);
     const isCold = w.temp <= 20;
     const isWarm = !isRaining && !isHot && w.temp >= 29;
+    const isOvercast = w.weatherCode === 3;
+    const isPartlyCloudy = w.weatherCode === 2;
 
     if (isStorm) {
         return [{
@@ -225,9 +232,9 @@ function buildWeatherNotifCards(w) {
     }
     if (isRaining) {
         return [{
-            icon: '🌧️',
+            icon: isDrizzle ? '🌦️' : '🌧️',
             color: 'bg-sky-100 text-sky-700',
-            title: `বৃষ্টির আবহাওয়া সতর্কতা (${tempBn}° সে.)`,
+            title: `${isDrizzle ? 'গুঁড়ি গুঁড়ি বৃষ্টির' : 'বৃষ্টির আবহাওয়া'} সতর্কতা (${tempBn}° সে.)`,
             desc: `${areaPrefix}এখন বৃষ্টি হচ্ছে (আর্দ্রতা ${humBn}%)। শেডের পর্দা নামিয়ে দিন, বৃষ্টির ছাট আটকান এবং লিটার (বিছানা) শুকনো রাখুন।`
         }];
     }
@@ -237,6 +244,14 @@ function buildWeatherNotifCards(w) {
             color: 'bg-blue-100 text-blue-700',
             title: `বৃষ্টির সম্ভাবনা (${probBn}%, ${tempBn}° সে.)`,
             desc: `${areaPrefix}শীঘ্রই বৃষ্টি হতে পারে। শেডের পর্দা প্রস্তুত রাখুন যেন বৃষ্টির পানিতে লিটার না ভেজে।`
+        }];
+    }
+    if (isFog) {
+        return [{
+            icon: '🌫️',
+            color: 'bg-gray-200 text-gray-700',
+            title: `কুয়াশা ও স্যাঁতসেঁতে আবহাওয়া (${tempBn}° সে.)`,
+            desc: `${areaPrefix}আকাশ কুয়াশাচ্ছন্ন (আর্দ্রতা ${humBn}%)। ঠান্ডা বাতাস আটকান এবং লিটার ও বাচ্চাদের তাপমাত্রা চেক করুন।`
         }];
     }
     if (isHot) {
@@ -265,16 +280,32 @@ function buildWeatherNotifCards(w) {
     }
     if (isWarm) {
         return [{
-            icon: '☀️',
+            icon: isOvercast ? '☁️' : (isPartlyCloudy ? '⛅' : '☀️'),
             color: 'bg-amber-100 text-amber-700',
             title: `গরম ও বাতাস চেক (${tempBn}° সে.)`,
             desc: `${areaPrefix}আর্দ্রতা ${humBn}%। শেডে পর্যাপ্ত বাতাস চলাচল ও ঠান্ডা পরিষ্কার পানির ব্যবস্থা নিশ্চিত করুন।`
         }];
     }
+    if (isOvercast) {
+        return [{
+            icon: '☁️',
+            color: 'bg-slate-100 text-slate-700',
+            title: `মেঘলা আবহাওয়া (${tempBn}° সে.)`,
+            desc: `${areaPrefix}আকাশ মেঘলা (আর্দ্রতা ${humBn}%)। শেডের পর্দা, বাতাস ও লিটারের অবস্থা দেখে নিন।`
+        }];
+    }
+    if (isPartlyCloudy) {
+        return [{
+            icon: '⛅',
+            color: 'bg-teal-100 text-teal-700',
+            title: `আংশিক মেঘলা আবহাওয়া (${tempBn}° সে.)`,
+            desc: `${areaPrefix}আবহাওয়া আরামদায়ক আছে (আর্দ্রতা ${humBn}%)। শেডের বাতাস ও পানি চেক করুন।`
+        }];
+    }
     return [{
-        icon: '🌤️',
-        color: 'bg-emerald-100 text-emerald-700',
-        title: `স্বাভাবিক আবহাওয়া (${tempBn}° সে.)`,
+        icon: isNight ? '🌙' : '☀️',
+        color: isNight ? 'bg-indigo-100 text-indigo-700' : 'bg-emerald-100 text-emerald-700',
+        title: `${isNight ? 'রাতের স্বাভাবিক আবহাওয়া' : 'পরিষ্কার ও স্বাভাবিক আবহাওয়া'} (${tempBn}° সে.)`,
         desc: `${areaPrefix}বর্তমানে আবহাওয়া আরামদায়ক আছে (আর্দ্রতা ${humBn}%)। শেডের বাতাস, পানি ও লিটারের অবস্থা দেখে নিন।`
     }];
 }

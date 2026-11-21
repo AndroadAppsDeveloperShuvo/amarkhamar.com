@@ -25,6 +25,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: push-notifications-sender
+  cancel-in-progress: false
+
 jobs:
   send-push:
     runs-on: ubuntu-latest
@@ -49,4 +53,5 @@ jobs:
           FIREBASE_DATABASE_SECRET: ${{ secrets.FIREBASE_DATABASE_SECRET }}
           FIREBASE_DATABASE_URL: ${{ secrets.FIREBASE_DATABASE_URL }}
           FORCE_SLOT: ${{ github.event.inputs.force_slot }}
+          CURRENT_REPO_NAME: ${{ github.event.repository.name }}
         run: node scripts/send-push-notifications.mjs
