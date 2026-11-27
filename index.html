@@ -275,10 +275,17 @@
                         </span> 
                         <span class="material-symbols-outlined text-gray-400">chevron_right</span>
                     </button>
-                    <button onclick="openDailyReportPage()" class="w-full flex items-center justify-between p-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition">
+                    <button onclick="openDailyReportPage()" class="w-full flex items-center justify-between p-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition border-b border-gray-100 dark:border-gray-700">
                         <span class="flex items-center gap-3 font-medium dark:text-gray-200">
                             <span class="material-symbols-outlined text-red-500">monitoring</span> 
                             দৈনিক রিপোর্ট (মৃত্যু ও গ্রোথ)
+                        </span> 
+                        <span class="material-symbols-outlined text-gray-400">chevron_right</span>
+                    </button>
+                    <button onclick="openNotepadPage()" class="w-full flex items-center justify-between p-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition">
+                        <span class="flex items-center gap-3 font-medium dark:text-gray-200">
+                            <span class="material-symbols-outlined text-amber-500">edit_note</span> 
+                            নোটপ্যাড
                         </span> 
                         <span class="material-symbols-outlined text-gray-400">chevron_right</span>
                     </button>
@@ -676,6 +683,7 @@
                 if(data) localStorage.setItem('offline_dues_' + uid, JSON.stringify(data));
                 renderDue(data);
             });
+            if (typeof loadNotepadData === 'function') loadNotepadData();
         }
 
         function navigate(p) { 
@@ -1169,6 +1177,7 @@
             const localShipments = JSON.parse(localStorage.getItem('offline_shipments_' + uid) || '{}');
             const localDues = JSON.parse(localStorage.getItem('offline_dues_' + uid) || '{}');
             const localMeds = JSON.parse(localStorage.getItem(`completed_meds_${uid}`) || '{}');
+            const localNotes = JSON.parse(localStorage.getItem('offline_notes_' + uid) || '{}');
 
             if (!farmData.shipments || Object.keys(farmData.shipments).length === 0) {
                 if (Object.keys(localShipments).length > 0) farmData.shipments = localShipments;
@@ -1178,6 +1187,9 @@
             }
             if (!farmData.completed_medicines || Object.keys(farmData.completed_medicines).length === 0) {
                 if (Object.keys(localMeds).length > 0) farmData.completed_medicines = localMeds;
+            }
+            if (!farmData.notes || Object.keys(farmData.notes).length === 0) {
+                if (Object.keys(localNotes).length > 0) farmData.notes = localNotes;
             }
 
             // স্টক ডাটা যদি allStockData তে থাকে
@@ -1277,7 +1289,7 @@
                 } else if (parsed.data && typeof parsed.data === 'object') {
                     farmData = parsed.data;
                     backupDate = parsed.exportDateFormatted || parsed.exportDate;
-                } else if (parsed.shipments || parsed.due_list || parsed.stock || parsed.completed_medicines) {
+                } else if (parsed.shipments || parsed.due_list || parsed.stock || parsed.completed_medicines || parsed.notes) {
                     farmData = parsed;
                 }
             }
@@ -1346,10 +1358,14 @@
             if (dataToRestore.skipped_medicines) {
                 localStorage.setItem(`skipped_meds_${uid}`, JSON.stringify(dataToRestore.skipped_medicines));
             }
+            if (dataToRestore.notes) {
+                localStorage.setItem('offline_notes_' + uid, JSON.stringify(dataToRestore.notes));
+            }
 
             // ৩. অ্যাপের ইন্টারফেস রিফ্রেশ করা
             loadUserData();
             if (typeof loadStockData === 'function') loadStockData();
+            if (typeof loadNotepadData === 'function') loadNotepadData();
             if (typeof initCompletedMedicinesListener === 'function') initCompletedMedicinesListener(uid);
             if (typeof loadMedicineShipmentDropdowns === 'function') loadMedicineShipmentDropdowns();
             if (typeof startStockListener === 'function') startStockListener(uid);
@@ -1364,17 +1380,18 @@
 
         navigateToTab('dashboard');
     </script>
-    <script src="notifications.js?v=45"></script>
+    <script src="notifications.js?v=46"></script>
     <script src="stock.js"></script>
     <script src="daily_report.js"></script>
-    <script src="medicine.js?v=45"></script>
-    <script src="pk_chatbot.js?v=45"></script>
-    <script src="push_notifications.js?v=45"></script>
+    <script src="notepad.js?v=46"></script>
+    <script src="medicine.js?v=46"></script>
+    <script src="pk_chatbot.js?v=46"></script>
+    <script src="push_notifications.js?v=46"></script>
     
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-                navigator.serviceWorker.register('sw.js?v=45').then(reg => {
+                navigator.serviceWorker.register('sw.js?v=46').then(reg => {
                     reg.update();
                 }).catch(e => console.warn('SW registration warning:', e));
             });

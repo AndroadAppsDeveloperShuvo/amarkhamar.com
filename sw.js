@@ -1,6 +1,6 @@
 // 🌐 Offline-First & Stale-While-Revalidate PWA Service Worker (স্থায়ী অফলাইন ক্যাশিং)
 
-const CACHE_NAME = 'khamar-app-v45';
+const CACHE_NAME = 'khamar-app-v46';
 
 // ১. লোকাল ফাইলসমূহ
 const localUrlsToCache = [
@@ -8,10 +8,11 @@ const localUrlsToCache = [
     './index.html', 
     './stock.js', 
     './daily_report.js',
-    './medicine.js?v=45',
-    './pk_chatbot.js?v=45',
-    './notifications.js?v=45',
-    './push_notifications.js?v=45',
+    './notepad.js?v=46',
+    './medicine.js?v=46',
+    './pk_chatbot.js?v=46',
+    './notifications.js?v=46',
+    './push_notifications.js?v=46',
     './admin.html',
     './manifest.json',
     './icon.png'
