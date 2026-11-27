@@ -1380,18 +1380,18 @@
 
         navigateToTab('dashboard');
     </script>
-    <script src="notifications.js?v=46"></script>
+    <script src="notifications.js?v=48"></script>
     <script src="stock.js"></script>
     <script src="daily_report.js"></script>
-    <script src="notepad.js?v=46"></script>
-    <script src="medicine.js?v=46"></script>
-    <script src="pk_chatbot.js?v=46"></script>
-    <script src="push_notifications.js?v=46"></script>
+    <script src="notepad.js?v=48"></script>
+    <script src="medicine.js?v=48"></script>
+    <script src="pk_chatbot.js?v=48"></script>
+    <script src="push_notifications.js?v=48"></script>
     
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-                navigator.serviceWorker.register('sw.js?v=46').then(reg => {
+                navigator.serviceWorker.register('sw.js?v=48').then(reg => {
                     reg.update();
                 }).catch(e => console.warn('SW registration warning:', e));
             });
